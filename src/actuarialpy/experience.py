@@ -6,7 +6,7 @@ from collections.abc import Iterable
 
 import pandas as pd
 
-from actuarialpy.columns import EXPOSURE_SUFFIX, as_list, sum_columns, validate_columns
+from actuarialpy.columns import as_list, sum_columns, validate_columns
 from actuarialpy.metrics import loss_ratio, per_exposure
 from actuarialpy.profiles import apply_profile_labels, get_profile_defaults
 
@@ -24,10 +24,12 @@ def _validate_exposures(exposures: list[str]) -> None:
 
 
 def _per_exposure_column_names(total_expense_name: str, total_revenue_name: str, exposure: str) -> tuple[str, str]:
-    suffix = EXPOSURE_SUFFIX.get(exposure)
-    if suffix:
-        return f"expense_{suffix}", f"revenue_{suffix}"
-    return f"{total_expense_name}_per_{exposure}", f"{total_revenue_name}_per_{exposure}"
+    mapping = {
+        "member_months": ("expense_pmpm", "revenue_pmpm"),
+        "subscriber_months": ("expense_pspm", "revenue_pspm"),
+        "employee_months": ("expense_pepm", "revenue_pepm"),
+    }
+    return mapping.get(exposure, (f"{total_expense_name}_per_{exposure}", f"{total_revenue_name}_per_{exposure}"))
 
 
 def summarize_experience(
@@ -49,10 +51,8 @@ def summarize_experience(
     Amounts and exposures are aggregated first. Ratios and per-exposure metrics
     are calculated after aggregation, which avoids averaging row-level ratios.
 
-    ``profile`` only supplies light defaults. By default the ratio column is
-    named ``loss_ratio`` (general across lines of business); the ``health``
-    profile names it ``mlr`` and the ``life`` profile ``benefit_ratio``. The
-    profile does not rename total expense or total revenue.
+    ``profile`` only supplies light defaults such as ``ratio_col='mlr'`` for
+    health. It does not rename total expense or total revenue.
     """
     groups = as_list(groupby)
     expenses = as_list(expense_cols)
@@ -66,7 +66,7 @@ def summarize_experience(
     if ratio_name is not None:
         ratio_col = ratio_name
     if ratio_col is None:
-        ratio_col = get_profile_defaults(profile).get("ratio_col", "loss_ratio")
+        ratio_col = get_profile_defaults(profile).get("ratio_col", "expense_revenue_ratio")
 
     amount_cols = list(dict.fromkeys(expenses + revenues + exposures))
     if groups:

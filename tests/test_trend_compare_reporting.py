@@ -3,14 +3,7 @@ import pytest
 
 from actuarialpy.compare import basis_point_change, variance_pct
 from actuarialpy.reporting import to_excel_report
-from actuarialpy.trend import (
-    annualized_trend,
-    midpoint_trend_factor,
-    period_change,
-    project_forward,
-    trend_factor,
-    trend_summary,
-)
+from actuarialpy.trend import annualized_trend, midpoint_trend_factor, period_change, project_forward, trend_factor, trend_summary
 
 
 def test_compare_trend_primitives():
@@ -40,3 +33,27 @@ def test_to_excel_report(tmp_path):
     path = tmp_path / "report.xlsx"
     result = to_excel_report({"summary": pd.DataFrame({"a": [1]})}, path)
     assert result.exists()
+
+
+def test_trend_summary_period_does_not_leak_numeric_period_column():
+    df = pd.DataFrame(
+        {
+            "lob": ["A", "A", "B", "B"],
+            "year": [2025, 2026, 2025, 2026],
+            "total_expense": [903356.13, 3371625.00, 798382.04, 3349350.00],
+            "member_months": [1665, 6214, 1654, 6939],
+        }
+    )
+    out = trend_summary(
+        df,
+        groupby="lob",
+        period_col="year",
+        prior_period=2025,
+        current_period=2026,
+        amount_col="total_expense",
+        exposure_col="member_months",
+    )
+    assert "year_x" not in out.columns
+    assert "year_y" not in out.columns
+    assert "current_total_expense" in out.columns
+    assert out.loc[out["lob"] == "A", "current_total_expense"].iloc[0] == pytest.approx(3371625.00)

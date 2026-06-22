@@ -1,4 +1,5 @@
 import pandas as pd
+import pytest
 
 from actuarialpy.completion import (
     complete_claim_components,

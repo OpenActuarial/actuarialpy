@@ -25,7 +25,7 @@ def test_rolling_summary_full_windows_default():
     assert first["period_end"] == pd.Timestamp("2026-03-01")
     last = out.iloc[-1]
     assert last["total_expense"] == 900
-    assert last["loss_ratio"] == 900 / 600
+    assert last["mlr"] == 900 / 600
     assert "months_available" not in out.columns
 
 

@@ -13,12 +13,7 @@ import pandas as pd
 
 
 def as_list(value: Any) -> list[Any]:
-    """Return value as a list. Strings are treated as single values.
-
-    Sets are returned in a deterministic (string-sorted) order, since set
-    iteration order is otherwise arbitrary and these lists frequently become
-    group-by keys or output column orders.
-    """
+    """Return value as a list. Strings are treated as single values."""
     if value is None:
         return []
     if isinstance(value, list):
@@ -26,7 +21,7 @@ def as_list(value: Any) -> list[Any]:
     if isinstance(value, tuple):
         return list(value)
     if isinstance(value, set):
-        return sorted(value, key=str)
+        return list(value)
     if isinstance(value, str):
         return [value]
     if isinstance(value, Iterable):
@@ -58,31 +53,9 @@ def sum_columns(df: pd.DataFrame, cols: str | Iterable[str], *, min_count: int =
     This is kept as a small internal-friendly utility because many actuarial
     functions accept several expense or revenue columns. For simple user code,
     pandas syntax such as ``df[cols].sum(axis=1)`` is usually sufficient.
-
-    With ``min_count=1`` (the default), a row consisting entirely of NaN sums to
-    NaN, while a row with at least one real value treats the remaining NaNs as 0.
     """
     cols_list = as_list(cols)
     if not cols_list:
         raise ValueError("cols must contain at least one column")
     validate_columns(df, cols_list)
     return df[cols_list].sum(axis=1, min_count=min_count)
-
-
-# Canonical mapping from exposure column -> per-exposure metric suffix. Shared by
-# experience, rolling, and components so the convention lives in exactly one place.
-EXPOSURE_SUFFIX = {
-    "member_months": "pmpm",
-    "subscriber_months": "pspm",
-    "employee_months": "pepm",
-}
-
-
-def per_exposure_name(base: str, exposure: str) -> str:
-    """Build a per-exposure column name from a base label and an exposure column.
-
-    ``per_exposure_name("inpatient", "member_months")`` -> ``"inpatient_pmpm"``.
-    Unrecognized exposures fall back to ``f"{base}_per_{exposure}"``.
-    """
-    suffix = EXPOSURE_SUFFIX.get(exposure)
-    return f"{base}_{suffix}" if suffix else f"{base}_per_{exposure}"

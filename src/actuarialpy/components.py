@@ -6,13 +6,19 @@ from collections.abc import Iterable
 
 import pandas as pd
 
-from actuarialpy.columns import EXPOSURE_SUFFIX, as_list, validate_columns
+from actuarialpy.columns import as_list, validate_columns
 from actuarialpy.metrics import per_exposure, safe_divide
+from actuarialpy.trend import _comparison_masks
 
 
 def _per_exposure_name(component: str, exposure_col: str) -> str:
-    suffix = EXPOSURE_SUFFIX.get(exposure_col)
-    return f"{component}_{suffix}" if suffix else f"{component}_per_{exposure_col}"
+    if exposure_col == "member_months":
+        return f"{component}_pmpm"
+    if exposure_col == "subscriber_months":
+        return f"{component}_pspm"
+    if exposure_col == "employee_months":
+        return f"{component}_pepm"
+    return f"{component}_per_{exposure_col}"
 
 
 def summarize_components(
@@ -50,9 +56,16 @@ def summarize_components(
 def component_driver_analysis(
     df: pd.DataFrame,
     *,
-    period_col: str,
-    prior_period,
-    current_period,
+    period_col: str | None = None,
+    prior_period=None,
+    current_period=None,
+    date_col: str | None = None,
+    prior_start=None,
+    prior_end=None,
+    current_start=None,
+    current_end=None,
+    prior_filter=None,
+    current_filter=None,
     component_cols: str | Iterable[str],
     exposure_col: str | None = None,
     groupby: str | Iterable[str] | None = None,
@@ -60,15 +73,34 @@ def component_driver_analysis(
     """Explain component drivers of change between two periods.
 
     The primary comparison is based on component totals, or component amount per
-    exposure when ``exposure_col`` is supplied. The API matches ``trend_summary``:
-    pass a DataFrame, a period column, and prior/current period values.
+    exposure when ``exposure_col`` is supplied. The API matches ``trend_summary``
+    and supports period-column, date-range, or explicit-filter comparisons.
     """
     groups = as_list(groupby)
     components = as_list(component_cols)
-    validate_columns(df, groups + [period_col] + components + ([exposure_col] if exposure_col else []))
+    required = groups + components + ([exposure_col] if exposure_col else [])
+    if period_col is not None:
+        required.append(period_col)
+    if date_col is not None:
+        required.append(date_col)
+    validate_columns(df, required)
 
-    prior_df = df.loc[df[period_col] == prior_period]
-    current_df = df.loc[df[period_col] == current_period]
+    prior_filter, current_filter, mode = _comparison_masks(
+        df,
+        period_col=period_col,
+        prior_period=prior_period,
+        current_period=current_period,
+        date_col=date_col,
+        prior_start=prior_start,
+        prior_end=prior_end,
+        current_start=current_start,
+        current_end=current_end,
+        prior_filter=prior_filter,
+        current_filter=current_filter,
+    )
+
+    prior_df = df.loc[prior_filter]
+    current_df = df.loc[current_filter]
 
     prior_sum = summarize_components(
         prior_df,
@@ -110,11 +142,20 @@ def component_driver_analysis(
             current_val = row.get(f"{metric}_current", 0)
             prior_val = 0 if pd.isna(prior_val) else prior_val
             current_val = 0 if pd.isna(current_val) else current_val
+            period_data = {}
+            if mode == "period":
+                period_data = {"prior_period": prior_period, "current_period": current_period}
+            elif mode == "date":
+                period_data = {
+                    "prior_start": pd.to_datetime(prior_start),
+                    "prior_end": pd.to_datetime(prior_end),
+                    "current_start": pd.to_datetime(current_start),
+                    "current_end": pd.to_datetime(current_end),
+                }
             rows.append(
                 {
                     **key_data,
-                    "prior_period": prior_period,
-                    "current_period": current_period,
+                    **period_data,
                     "component": comp,
                     "prior": prior_val,
                     "current": current_val,

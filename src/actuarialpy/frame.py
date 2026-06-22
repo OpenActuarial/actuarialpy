@@ -1,222 +1,395 @@
-"""The :class:`Experience` convenience facade.
-
-``Experience`` binds the experience column roles (expense, revenue, exposure,
-profile) once so each view is a single short call instead of repeating the
-column arguments. It is an *optional* layer: every method delegates to the
-existing free function, which remains available directly for anything the facade
-does not cover. Any bound role can be overridden on a per-call basis.
-
-    exp = Experience(df, expense=["claims", "rebates"], revenue="premium",
-                     exposure="member_months", profile="health")
-    exp.by("line_of_business")            # -> summarize_experience(...)
-    exp.rolling(12, date_col="month", groupby="group_id")  # -> rolling_summary(...)
-    exp.trend(amount_col="claims", period_col="year", prior_period=2025, current_period=2026)
-"""
+"""Stateful facade for experience-analysis workflows."""
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from dataclasses import dataclass, replace
 from typing import Any
 
 import pandas as pd
+from pandas.api.types import is_numeric_dtype
 
-from actuarialpy.banding import summarize_by_band
+from actuarialpy.claimants import claim_concentration, summarize_claimants, top_claimants
 from actuarialpy.cohorts import cohort_summary, duration_summary
-from actuarialpy.columns import as_list
+from actuarialpy.columns import as_list, sum_columns, validate_columns
+from actuarialpy.components import component_driver_analysis, summarize_components
+from actuarialpy.expected import summarize_actual_vs_expected
 from actuarialpy.experience import status_summary, summarize_experience, summarize_views
 from actuarialpy.rolling import rolling_summary
 from actuarialpy.trend import trend_summary
 
-_UNSET: Any = object()
+_ID_LIKE_EXPOSURE_NAMES = {"member_id", "subscriber_id", "group_id", "employee_id", "policy_id", "claim_id"}
 
 
-class Experience:
-    """Bind expense/revenue/exposure/profile once and reuse across summaries."""
-
-    def __init__(
-        self,
-        df: pd.DataFrame,
-        *,
-        expense: str | Iterable[str],
-        revenue: str | Iterable[str],
-        exposure: str | Iterable[str] | None = None,
-        profile: str | None = None,
-    ) -> None:
-        self.df = df
-        self.expense = expense
-        self.revenue = revenue
-        self.exposure = exposure
-        self.profile = profile
-
-    # -- role resolution ----------------------------------------------------- #
-    def _roles(self, expense: Any, revenue: Any, exposure: Any, profile: Any) -> dict[str, Any]:
-        return {
-            "expense_cols": self.expense if expense is None else expense,
-            "revenue_cols": self.revenue if revenue is None else revenue,
-            "exposure_cols": self.exposure if exposure is _UNSET else exposure,
-            "profile": self.profile if profile is _UNSET else profile,
-        }
-
-    def _single_exposure(self, exposure: Any = _UNSET) -> str | None:
-        value = self.exposure if exposure is _UNSET else exposure
-        cols = as_list(value)
-        return cols[0] if cols else None
-
-    # -- delegating methods -------------------------------------------------- #
-    def by(
-        self,
-        groupby: str | Iterable[str] | None = None,
-        *,
-        ratio_col: str | None = None,
-        ratio_name: str | None = None,
-        expense: Any = None,
-        revenue: Any = None,
-        exposure: Any = _UNSET,
-        profile: Any = _UNSET,
-    ) -> pd.DataFrame:
-        """Grouped experience summary (delegates to ``summarize_experience``)."""
-        return summarize_experience(
-            self.df, groupby=groupby, ratio_col=ratio_col, ratio_name=ratio_name,
-            **self._roles(expense, revenue, exposure, profile),
+def _validate_exposure_names(exposures: list[str]) -> None:
+    bad = [col for col in exposures if col.lower() in _ID_LIKE_EXPOSURE_NAMES or col.lower().endswith("_id")]
+    if bad:
+        raise ValueError(
+            "Exposure columns must be numeric exposure measures, not identifiers. "
+            f"Invalid exposure column(s): {bad}."
         )
 
-    def views(
-        self,
-        views: dict[str, Any],
-        *,
-        expense: Any = None,
-        revenue: Any = None,
-        exposure: Any = _UNSET,
-        profile: Any = _UNSET,
-    ) -> dict[str, pd.DataFrame]:
-        """Multiple grouped views in one call (delegates to ``summarize_views``)."""
-        return summarize_views(self.df, views=views, **self._roles(expense, revenue, exposure, profile))
 
-    def by_status(
+def _validate_numeric_columns(df: pd.DataFrame, cols: list[str], *, role: str) -> None:
+    bad = [col for col in cols if not is_numeric_dtype(df[col])]
+    if bad:
+        raise ValueError(f"{role} columns must be numeric. Non-numeric column(s): {bad}.")
+
+
+@dataclass(frozen=True)
+class Experience:
+    """Bind an experience dataset to its actuarial column roles.
+
+    ``Experience`` is the recommended entry point for repeated experience-analysis
+    workflows. It stores common column roles once and delegates calculations to
+    the package's free functions. The object is immutable: methods return
+    DataFrames or new ``Experience`` objects rather than changing stored data in
+    place.
+    """
+
+    data: pd.DataFrame
+    expense: str | list[str]
+    revenue: str | list[str]
+    exposure: str | list[str] | None = None
+    date: str | None = None
+    profile: str | None = None
+    copy: bool = False
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "expense", as_list(self.expense))
+        object.__setattr__(self, "revenue", as_list(self.revenue))
+        object.__setattr__(self, "exposure", as_list(self.exposure))
+        if self.copy:
+            object.__setattr__(self, "data", self.data.copy())
+
+        required = list(self.expense) + list(self.revenue) + list(self.exposure)
+        if self.date is not None:
+            required.append(self.date)
+        validate_columns(self.data, required)
+        _validate_exposure_names(list(self.exposure))
+        _validate_numeric_columns(self.data, list(self.expense), role="Expense")
+        _validate_numeric_columns(self.data, list(self.revenue), role="Revenue")
+        _validate_numeric_columns(self.data, list(self.exposure), role="Exposure")
+
+    def with_roles(
         self,
-        status_col: str,
         *,
-        entity_col: str | None = None,
-        expense: Any = None,
-        revenue: Any = None,
-        exposure: Any = _UNSET,
-        profile: Any = _UNSET,
-    ) -> pd.DataFrame:
-        """Experience by status, with optional entity counts (``status_summary``)."""
-        return status_summary(
-            self.df, status_col=status_col, entity_col=entity_col,
-            **self._roles(expense, revenue, exposure, profile),
+        data: pd.DataFrame | None = None,
+        expense: str | list[str] | None = None,
+        revenue: str | list[str] | None = None,
+        exposure: str | list[str] | None = None,
+        date: str | None = None,
+        profile: str | None = None,
+        copy: bool | None = None,
+    ) -> "Experience":
+        """Return a new ``Experience`` object with updated data or roles."""
+        return replace(
+            self,
+            data=self.data if data is None else data,
+            expense=self.expense if expense is None else expense,
+            revenue=self.revenue if revenue is None else revenue,
+            exposure=self.exposure if exposure is None else exposure,
+            date=self.date if date is None else date,
+            profile=self.profile if profile is None else profile,
+            copy=self.copy if copy is None else copy,
+        )
+
+    def filter(
+        self,
+        mask: Any | None = None,
+        *,
+        query: str | None = None,
+        copy: bool = True,
+    ) -> "Experience":
+        """Return a new ``Experience`` object over a filtered dataset.
+
+        Use either a boolean mask or a pandas query string.
+        """
+        if (mask is None) == (query is None):
+            raise ValueError("Pass exactly one of mask or query.")
+        if query is not None:
+            data = self.data.query(query)
+        else:
+            data = self.data.loc[mask]
+        if copy:
+            data = data.copy()
+        return self.with_roles(data=data, copy=False)
+
+    def by(self, groupby: str | list[str] | None = None, **kwargs: Any) -> pd.DataFrame:
+        """Summarize experience by optional grouping columns."""
+        return summarize_experience(
+            self.data,
+            groupby=groupby,
+            expense_cols=kwargs.pop("expense_cols", kwargs.pop("expense", self.expense)),
+            revenue_cols=kwargs.pop("revenue_cols", kwargs.pop("revenue", self.revenue)),
+            exposure_cols=kwargs.pop("exposure_cols", kwargs.pop("exposure", self.exposure)),
+            profile=kwargs.pop("profile", self.profile),
+            **kwargs,
+        )
+
+    def views(self, views: dict[str, str | list[str] | None], **kwargs: Any) -> dict[str, pd.DataFrame]:
+        """Create several named grouped experience views."""
+        return summarize_views(
+            self.data,
+            views=views,
+            expense_cols=kwargs.pop("expense_cols", kwargs.pop("expense", self.expense)),
+            revenue_cols=kwargs.pop("revenue_cols", kwargs.pop("revenue", self.revenue)),
+            exposure_cols=kwargs.pop("exposure_cols", kwargs.pop("exposure", self.exposure)),
+            profile=kwargs.pop("profile", self.profile),
+            **kwargs,
         )
 
     def rolling(
         self,
         window: int = 12,
         *,
-        date_col: str,
-        groupby: str | Iterable[str] | None = None,
-        freq: str | None = None,
-        min_periods: int | None = None,
-        drop_incomplete: bool = True,
-        ratio_col: str = "loss_ratio",
-        expense: Any = None,
-        revenue: Any = None,
-        exposure: Any = _UNSET,
+        groupby: str | list[str] | None = None,
+        date_col: str | None = None,
+        **kwargs: Any,
     ) -> pd.DataFrame:
-        """Calendar-aware rolling summary (delegates to ``rolling_summary``)."""
-        roles = self._roles(expense, revenue, exposure, _UNSET)
-        roles.pop("profile")  # rolling_summary takes no profile
+        """Create a rolling-period experience summary."""
+        resolved_date = self._resolve_date_col(date_col)
         return rolling_summary(
-            self.df, date_col=date_col, window=window, groupby=groupby, freq=freq,
-            min_periods=min_periods, drop_incomplete=drop_incomplete, ratio_col=ratio_col, **roles,
-        )
-
-    def by_band(
-        self,
-        value_col: str,
-        bands: Any,
-        *,
-        labels: Any = None,
-        band_col: str = "band",
-        ratio_col: str | None = None,
-        right: bool = False,
-        expense: Any = None,
-        revenue: Any = None,
-        exposure: Any = _UNSET,
-        profile: Any = _UNSET,
-    ) -> pd.DataFrame:
-        """Experience by size band (delegates to ``summarize_by_band``)."""
-        return summarize_by_band(
-            self.df, value_col, bands, labels=labels, band_col=band_col,
-            ratio_col=ratio_col, right=right, **self._roles(expense, revenue, exposure, profile),
+            self.data,
+            date_col=resolved_date,
+            window=window,
+            groupby=groupby,
+            expense_cols=kwargs.pop("expense_cols", kwargs.pop("expense", self.expense)),
+            revenue_cols=kwargs.pop("revenue_cols", kwargs.pop("revenue", self.revenue)),
+            exposure_cols=kwargs.pop("exposure_cols", kwargs.pop("exposure", self.exposure)),
+            **kwargs,
         )
 
     def trend(
         self,
         *,
-        amount_col: str,
-        period_col: str | None = None,
-        prior_period: Any = None,
-        current_period: Any = None,
-        groupby: str | Iterable[str] | None = None,
-        prior_filter: Any = None,
-        current_filter: Any = None,
-        prior_label: str = "prior",
-        current_label: str = "current",
-        exposure: Any = _UNSET,
+        amount_col: str | None = None,
+        exposure_col: str | None = None,
+        groupby: str | list[str] | None = None,
+        date_col: str | None = None,
+        **kwargs: Any,
     ) -> pd.DataFrame:
-        """Current-vs-prior trend (delegates to ``trend_summary``).
-
-        ``amount_col`` is explicit because trend works on a single metric; the
-        bound exposure is used for the per-exposure trend unless overridden.
-        """
+        """Compare amount or per-exposure experience between two periods."""
+        data, resolved_amount = self._data_with_amount(amount_col)
+        # Use the bound date column only for date-range comparisons. If the
+        # caller supplies period_col/prior_period/current_period, passing the
+        # bound date column would create two comparison modes and incorrectly
+        # raise an error.
+        resolved_date = date_col if date_col is not None else self.date
+        if "period_col" in kwargs and date_col is None:
+            resolved_date = None
         return trend_summary(
-            self.df, period_col=period_col, prior_period=prior_period, current_period=current_period,
-            groupby=groupby, amount_col=amount_col, exposure_col=self._single_exposure(exposure),
-            prior_filter=prior_filter, current_filter=current_filter,
-            prior_label=prior_label, current_label=current_label,
+            data,
+            amount_col=resolved_amount,
+            exposure_col=exposure_col or self._single_exposure_or_none(),
+            groupby=groupby,
+            date_col=resolved_date,
+            **kwargs,
         )
+
+    def components(
+        self,
+        component_cols: str | list[str],
+        *,
+        exposure_col: str | None = None,
+        groupby: str | list[str] | None = None,
+        date_col: str | None = None,
+        **kwargs: Any,
+    ) -> pd.DataFrame:
+        """Explain component drivers between two periods."""
+        # Use the bound date column only for date-range comparisons. If the
+        # caller supplies period_col/prior_period/current_period, passing the
+        # bound date column would create two comparison modes and incorrectly
+        # raise an error.
+        resolved_date = date_col if date_col is not None else self.date
+        if "period_col" in kwargs and date_col is None:
+            resolved_date = None
+        return component_driver_analysis(
+            self.data,
+            component_cols=component_cols,
+            exposure_col=exposure_col or self._single_exposure_or_none(),
+            groupby=groupby,
+            date_col=resolved_date,
+            **kwargs,
+        )
+
+    def component_summary(
+        self,
+        component_cols: str | list[str],
+        *,
+        groupby: str | list[str] | None = None,
+        exposure_col: str | None = None,
+        **kwargs: Any,
+    ) -> pd.DataFrame:
+        """Summarize component amounts, per-exposure values, and shares."""
+        return summarize_components(
+            self.data,
+            groupby=groupby,
+            component_cols=component_cols,
+            exposure_col=exposure_col or self._single_exposure_or_none(),
+            **kwargs,
+        )
+
+    def actual_vs_expected(
+        self,
+        expected: str | list[str],
+        *,
+        actual: str | list[str] | None = None,
+        groupby: str | list[str] | None = None,
+        exposure: str | list[str] | None = None,
+        **kwargs: Any,
+    ) -> pd.DataFrame:
+        """Summarize actual-versus-expected experience.
+
+        If ``actual`` is omitted, the object's bound expense columns are used.
+        """
+        return summarize_actual_vs_expected(
+            self.data,
+            groupby=groupby,
+            actual_cols=self.expense if actual is None else actual,
+            expected_cols=expected,
+            exposure_cols=self.exposure if exposure is None else exposure,
+            **kwargs,
+        )
+
+    def claimants(
+        self,
+        claimant_col: str,
+        *,
+        amount_cols: str | list[str] | None = None,
+        groupby: str | list[str] | None = None,
+        exposure_col: str | None = None,
+        **kwargs: Any,
+    ) -> pd.DataFrame:
+        """Aggregate the experience to claimant/member/risk level."""
+        return summarize_claimants(
+            self.data,
+            claimant_col=claimant_col,
+            amount_cols=self.expense if amount_cols is None else amount_cols,
+            groupby=groupby,
+            exposure_col=exposure_col,
+            **kwargs,
+        )
+
+    def top_claimants(
+        self,
+        claimant_col: str,
+        *,
+        amount_cols: str | list[str] | None = None,
+        amount_col: str | None = None,
+        groupby: str | list[str] | None = None,
+        n: int = 25,
+        **kwargs: Any,
+    ) -> pd.DataFrame:
+        """Return top claimants by amount."""
+        return top_claimants(
+            self.data,
+            claimant_col=claimant_col,
+            amount_cols=self.expense if amount_cols is None and amount_col is None else amount_cols,
+            amount_col=amount_col,
+            groupby=groupby,
+            n=n,
+            **kwargs,
+        )
+
+    def claimant_concentration(
+        self,
+        claimant_col: str,
+        *,
+        amount_cols: str | list[str] | None = None,
+        groupby: str | list[str] | None = None,
+        **kwargs: Any,
+    ) -> pd.DataFrame:
+        """Summarize how concentrated experience is among top claimants."""
+        claimant_summary = summarize_claimants(
+            self.data,
+            claimant_col=claimant_col,
+            amount_cols=self.expense if amount_cols is None else amount_cols,
+            groupby=groupby,
+        )
+        return claim_concentration(claimant_summary, groupby=groupby, **kwargs)
 
     def cohort(
         self,
         *,
         entity_col: str,
-        date_col: str,
         start_date_col: str,
         duration_months: int = 12,
-        groupby: str | Iterable[str] | None = None,
-        expense: Any = None,
-        revenue: Any = None,
-        exposure: Any = _UNSET,
-        profile: Any = _UNSET,
+        groupby: str | list[str] | None = None,
+        date_col: str | None = None,
+        **kwargs: Any,
     ) -> pd.DataFrame:
-        """First-N-months cohort summary (delegates to ``cohort_summary``)."""
+        """Summarize each entity's first N months or cohort-duration window."""
         return cohort_summary(
-            self.df, entity_col=entity_col, date_col=date_col, start_date_col=start_date_col,
-            duration_months=duration_months, groupby=groupby,
-            **self._roles(expense, revenue, exposure, profile),
+            self.data,
+            entity_col=entity_col,
+            date_col=self._resolve_date_col(date_col),
+            start_date_col=start_date_col,
+            duration_months=duration_months,
+            groupby=groupby,
+            expense_cols=kwargs.pop("expense_cols", kwargs.pop("expense", self.expense)),
+            revenue_cols=kwargs.pop("revenue_cols", kwargs.pop("revenue", self.revenue)),
+            exposure_cols=kwargs.pop("exposure_cols", kwargs.pop("exposure", self.exposure)),
+            profile=kwargs.pop("profile", self.profile),
+            **kwargs,
         )
 
     def duration(
         self,
         *,
         entity_col: str,
-        date_col: str,
         start_date_col: str,
         max_duration_month: int | None = None,
-        expense: Any = None,
-        revenue: Any = None,
-        exposure: Any = _UNSET,
+        date_col: str | None = None,
+        **kwargs: Any,
     ) -> pd.DataFrame:
-        """Experience by duration month (delegates to ``duration_summary``)."""
-        roles = self._roles(expense, revenue, exposure, _UNSET)
-        roles.pop("profile")  # duration_summary takes no profile
+        """Summarize experience by duration month since entity start."""
         return duration_summary(
-            self.df, entity_col=entity_col, date_col=date_col, start_date_col=start_date_col,
-            max_duration_month=max_duration_month, **roles,
+            self.data,
+            entity_col=entity_col,
+            date_col=self._resolve_date_col(date_col),
+            start_date_col=start_date_col,
+            expense_cols=kwargs.pop("expense_cols", kwargs.pop("expense", self.expense)),
+            revenue_cols=kwargs.pop("revenue_cols", kwargs.pop("revenue", self.revenue)),
+            exposure_cols=kwargs.pop("exposure_cols", kwargs.pop("exposure", self.exposure)),
+            max_duration_month=max_duration_month,
+            **kwargs,
         )
 
-    def __repr__(self) -> str:
-        return (
-            f"Experience(expense={self.expense!r}, revenue={self.revenue!r}, "
-            f"exposure={self.exposure!r}, profile={self.profile!r}, rows={len(self.df)})"
+    def by_status(self, status_col: str, *, entity_col: str | None = None, **kwargs: Any) -> pd.DataFrame:
+        """Summarize experience by a status column."""
+        return status_summary(
+            self.data,
+            status_col=status_col,
+            entity_col=entity_col,
+            expense_cols=kwargs.pop("expense_cols", kwargs.pop("expense", self.expense)),
+            revenue_cols=kwargs.pop("revenue_cols", kwargs.pop("revenue", self.revenue)),
+            exposure_cols=kwargs.pop("exposure_cols", kwargs.pop("exposure", self.exposure)),
+            profile=kwargs.pop("profile", self.profile),
+            **kwargs,
         )
+
+    def _resolve_date_col(self, date_col: str | None) -> str:
+        resolved = date_col or self.date
+        if resolved is None:
+            raise ValueError("A date column is required. Pass date=... to Experience or date_col=... to this method.")
+        return resolved
+
+    def _single_exposure_or_none(self) -> str | None:
+        exposures = as_list(self.exposure)
+        if not exposures:
+            return None
+        if len(exposures) > 1:
+            raise ValueError("Multiple exposures are bound. Pass exposure_col explicitly for this method.")
+        return exposures[0]
+
+    def _data_with_amount(self, amount_col: str | None) -> tuple[pd.DataFrame, str]:
+        if amount_col is not None:
+            validate_columns(self.data, [amount_col])
+            return self.data, amount_col
+        expenses = as_list(self.expense)
+        if len(expenses) == 1:
+            return self.data, expenses[0]
+        temp = self.data.copy()
+        amount_name = "_actuarialpy_total_expense"
+        temp[amount_name] = sum_columns(temp, expenses)
+        return temp, amount_name

@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "actuarialpy"
-version = "0.8.0"
-description = "Primitive-based Python tools for actuarial analysis."
+version = "0.6.1"
+description = "Experience-centered Python tools for actuarial analysis."
 readme = "README.md"
 requires-python = ">=3.9"
 license = "MIT"
@@ -25,7 +25,6 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "Topic :: Office/Business :: Financial",
     "Topic :: Scientific/Engineering :: Mathematics",
-    "Typing :: Typed",
 ]
 dependencies = [
     "numpy>=1.23",
@@ -34,7 +33,7 @@ dependencies = [
 
 [project.optional-dependencies]
 excel = ["openpyxl>=3.1"]
-dev = ["pytest>=7", "build>=1", "twine>=5", "ruff>=0.4", "mypy>=1.8"]
+dev = ["pytest>=7", "build>=1", "twine>=5"]
 
 [project.urls]
 Homepage = "https://github.com/actuarialpy/actuarialpy-core"
@@ -44,23 +43,5 @@ Issues = "https://github.com/actuarialpy/actuarialpy-core/issues"
 [tool.hatch.build.targets.wheel]
 packages = ["src/actuarialpy"]
 
-[tool.hatch.build.targets.wheel.force-include]
-"src/actuarialpy/py.typed" = "actuarialpy/py.typed"
-
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-
-[tool.ruff]
-line-length = 120
-target-version = "py39"
-
-[tool.ruff.lint]
-select = ["E", "F", "I", "UP", "B"]
-ignore = ["E501"]
-
-[tool.mypy]
-python_version = "3.10"
-mypy_path = "src"
-ignore_missing_imports = true
-warn_unused_ignores = true
-no_implicit_optional = true

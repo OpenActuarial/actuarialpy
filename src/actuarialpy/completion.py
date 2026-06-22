@@ -2,11 +2,9 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
-
 import pandas as pd
 
-from actuarialpy.columns import as_list, validate_columns
+from actuarialpy.columns import validate_columns
 from actuarialpy.metrics import safe_divide
 
 
@@ -116,65 +114,11 @@ def make_completion_triangle(
     amount_col: str,
     index_name: str = "origin_period",
     lag_name: str = "lag_month",
-    cumulative: bool = False,
 ) -> pd.DataFrame:
-    """Create a claims triangle by origin period and valuation lag.
-
-    By default ``amount_col`` is assumed to already hold the value *as of* each
-    valuation date (a cumulative-to-date snapshot); amounts are summed within
-    each (origin, lag) cell and pivoted as-is. Set ``cumulative=True`` when
-    ``amount_col`` holds *incremental* amounts at each lag, in which case the
-    incremental values are accumulated across lag to build a cumulative
-    triangle. The two conventions give different triangles, so choose the one
-    that matches your input.
-    """
+    """Create a simple cumulative claims triangle by origin period and valuation lag."""
     validate_columns(df, [origin_col, valuation_col, amount_col])
     temp = df.copy()
     temp[index_name] = pd.to_datetime(temp[origin_col]).dt.to_period("M")
     temp[lag_name] = lag_months(temp[origin_col], temp[valuation_col])
     grouped = temp.groupby([index_name, lag_name], dropna=False)[amount_col].sum().reset_index()
-    triangle = grouped.pivot(index=index_name, columns=lag_name, values=amount_col).sort_index(axis=1)
-    if cumulative:
-        triangle = triangle.cumsum(axis=1)
-    return triangle
-
-
-def completed_experience(
-    df: pd.DataFrame,
-    *,
-    component_factor_map: dict[str, str],
-    revenue_cols: str | Iterable[str],
-    groupby: str | Iterable[str] | None = None,
-    exposure_cols: str | Iterable[str] | None = None,
-    additional_expense_cols: str | Iterable[str] | None = None,
-    method: str = "divide",
-    ratio_col: str | None = None,
-    profile: str | None = None,
-    validate_factors: bool = True,
-) -> pd.DataFrame:
-    """Complete claim components, then summarize experience on a completed basis.
-
-    Convenience for the common completion -> experience chain. Each
-    ``paid_col -> factor_col`` pair in ``component_factor_map`` is completed; the
-    resulting ``*_completed`` columns become the expense numerator, together with
-    any ``additional_expense_cols`` (e.g. rebates, non-fee-for-service expense)
-    that are summed as-is. The factor columns must already be present on ``df``
-    (join your completion-factor table on first). Returns a grouped experience
-    summary whose loss ratio is on a completed basis.
-    """
-    from actuarialpy.experience import summarize_experience
-
-    completed = complete_claim_components(
-        df, component_factor_map, method=method, validate_factors=validate_factors
-    )
-    completed_cols = [f"{paid_col}_completed" for paid_col in component_factor_map]
-    expense_cols = completed_cols + as_list(additional_expense_cols)
-    return summarize_experience(
-        completed,
-        groupby=groupby,
-        expense_cols=expense_cols,
-        revenue_cols=revenue_cols,
-        exposure_cols=exposure_cols,
-        ratio_col=ratio_col,
-        profile=profile,
-    )
+    return grouped.pivot(index=index_name, columns=lag_name, values=amount_col).sort_index(axis=1)

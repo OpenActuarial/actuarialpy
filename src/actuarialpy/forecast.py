@@ -3,14 +3,13 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
-from typing import Literal
 
 import pandas as pd
 
 from actuarialpy.columns import as_list, validate_columns
 from actuarialpy.compare import variance, variance_pct
-from actuarialpy.metrics import actual_to_expected
-from actuarialpy.trend import project_forward
+from actuarialpy.metrics import actual_to_expected, per_exposure
+from actuarialpy.trend import project_forward, trend_factor
 
 
 def expected_from_rate(rate, exposure):
@@ -63,7 +62,7 @@ def compare_actual_to_expected(
     on: str | Iterable[str],
     actual_col: str,
     expected_col: str,
-    how: Literal["left", "right", "outer", "inner", "cross"] = "left",
+    how: str = "left",
 ) -> pd.DataFrame:
     """Join actual and expected tables and calculate A/E and variance metrics."""
     keys = as_list(on)
