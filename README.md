@@ -17,8 +17,9 @@ pip install -e .
 ActuarialPy currently supports:
 
 - Basic actuarial metrics such as loss ratio, per-exposure metrics (PMPM/PSPM/PEPM as health conveniences), frequency, severity, pure premium, combined ratio, actual-to-expected, and the permissible (target/zero-margin) loss ratio.
-- Claim completion (loss development) calculations using paid completion factors, and IBNR.
+- Claim completion (loss development) calculations using paid completion factors, IBNR, and a `completed_experience` one-call completion-to-experience summary.
 - Grouped experience summaries by fields such as group, product, line of business, and incurred period (ratio column defaults to `loss_ratio`).
+- An optional `Experience` facade that binds the expense/revenue/exposure/profile roles once, so each view (`.by`, `.rolling`, `.trend`, `.by_band`, `.by_status`, `.cohort`, `.duration`) is a single short call instead of repeating the column arguments.
 - Rolling-window summaries, including rolling 12-period loss ratio and per-exposure views.
 - Trend summaries comparing two periods.
 - Component-level driver analysis for arbitrary cost categories.
@@ -37,6 +38,7 @@ src/actuarialpy/
 ├── metrics.py       # Core ratios, exposure-normalized metrics, and actuarial primitives
 ├── completion.py    # Completion factors, completed claims, IBNR, and claim triangles
 ├── experience.py    # Grouped experience summaries and views
+├── frame.py         # Experience facade: bind column roles once, delegate to the functions above
 ├── rolling.py       # Calendar-aware rolling-window experience summaries
 ├── trend.py         # Trend factors, projection, and period-over-period summaries
 ├── components.py    # Component summaries and driver analysis

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "actuarialpy"
-version = "0.7.0"
+version = "0.8.0"
 description = "Primitive-based Python tools for actuarial analysis."
 readme = "README.md"
 requires-python = ">=3.9"

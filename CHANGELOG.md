@@ -1,5 +1,34 @@
 # Changelog
 
+## 0.8.0
+
+Ergonomics release: bind the experience column roles once instead of repeating
+them on every call, plus a completion convenience and a trend fix.
+
+### Added
+
+- **`Experience` facade** (`actuarialpy.Experience`): an optional convenience
+  layer that remembers the expense, revenue, exposure, and profile arguments so
+  each view is a single short call. Methods delegate to the existing free
+  functions (`by` -> `summarize_experience`, `views` -> `summarize_views`,
+  `by_status` -> `status_summary`, `rolling` -> `rolling_summary`, `by_band` ->
+  `summarize_by_band`, `trend` -> `trend_summary`, `cohort`/`duration` ->
+  `cohort_summary`/`duration_summary`). The free functions are unchanged and
+  remain the substrate; any bound role can be overridden per call.
+- **`completed_experience`** in `completion`: completes claim components and then
+  summarizes experience on the completed basis in one call. The `*_completed`
+  columns become the expense numerator together with any `additional_expense_cols`
+  (e.g. rebates, non-fee-for-service expense). Convenience for the common
+  completion -> experience chain.
+
+### Fixed
+
+- **`trend_summary` no longer leaks the period column.** Previously the
+  `period_col` (e.g. `year`) was summed through the group-by and collided into
+  `year_x`/`year_y` in the output. The period column is now used only to build
+  the prior/current masks and is no longer carried into the summary.
+
+
 ## 0.7.0
 
 This release generalizes the package across lines of business (life, health, and

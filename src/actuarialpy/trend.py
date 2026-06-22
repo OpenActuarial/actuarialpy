@@ -64,10 +64,9 @@ def trend_summary(
     pass boolean ``prior_filter`` and ``current_filter`` masks instead.
     """
     groups = as_list(groupby)
-    required = groups + [amount_col] + ([exposure_col] if exposure_col else [])
-    if period_col is not None:
-        required.append(period_col)
-    validate_columns(df, required)
+    sum_cols = groups + [amount_col] + ([exposure_col] if exposure_col else [])
+    to_validate = sum_cols + ([period_col] if period_col is not None else [])
+    validate_columns(df, to_validate)
 
     period_args_supplied = period_col is not None or prior_period is not None or current_period is not None
     filter_args_supplied = prior_filter is not None or current_filter is not None
@@ -84,7 +83,7 @@ def trend_summary(
         raise ValueError("prior_filter and current_filter must be supplied together.")
 
     def summarize(mask, label):
-        temp = df.loc[mask, required].copy()
+        temp = df.loc[mask, sum_cols].copy()
         if groups:
             out = temp.groupby(groups, dropna=False, as_index=False).sum(numeric_only=True)
         else:

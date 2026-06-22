@@ -28,6 +28,7 @@ from actuarialpy.compare import (
 from actuarialpy.completion import (
     complete_claim_components,
     complete_claims,
+    completed_experience,
     completed_from_factor,
     ibnr,
     lag_months,
@@ -66,6 +67,7 @@ from actuarialpy.forecast import (
     forecast_experience,
     forecast_from_rate,
 )
+from actuarialpy.frame import Experience
 from actuarialpy.lifecycle import (
     STATUS_ACTIVE,
     STATUS_FIRST_YEAR,
@@ -149,6 +151,7 @@ __all__ = [
     # completion / IBNR
     "complete_claim_components",
     "complete_claims",
+    "completed_experience",
     "completed_from_factor",
     "ibnr",
     "lag_months",
@@ -158,6 +161,7 @@ __all__ = [
     "status_summary",
     "summarize_experience",
     "summarize_views",
+    "Experience",
     # components / contribution
     "component_contribution",
     "component_driver_analysis",
@@ -229,4 +233,4 @@ __all__ = [
     "to_excel_report",
 ]
 
-__version__ = "0.7.0"
+__version__ = "0.8.0"
