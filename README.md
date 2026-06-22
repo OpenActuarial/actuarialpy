@@ -1,38 +1,50 @@
 # ActuarialPy
 
-**ActuarialPy** is a primitive-based Python toolkit for general actuarial analysis.
+ActuarialPy is a Python toolkit for actuarial experience analysis. It provides reusable functions for common actuarial calculations, grouped experience summaries, completion factor application, rolling experience views, trend comparisons, and component-level driver analysis.
 
-The package is organized bottom-up: small actuarial functions can be used directly, while larger summary, trend, rolling, cohort, completion, and reporting functions compose those primitives. It intentionally avoids wrapping ordinary pandas operations unless the wrapper adds actuarial logic or validation.
+The package is designed to sit on top of pandas. It does not attempt to replace pandas or wrap ordinary DataFrame operations. Instead, it focuses on calculations and workflows where actuarial meaning matters, such as aggregating before calculating ratios, completing claims with valuation factors, calculating PMPM metrics, and comparing experience across periods.
 
-## Install locally
+## Installation
+
+For local development:
 
 ```bash
 pip install -e .
 ```
 
-## Modules
+## Core capabilities
+
+ActuarialPy currently supports:
+
+- Basic actuarial metrics such as loss ratio, PMPM, PSPM, frequency, severity, pure premium, and actual-to-expected.
+- Claim completion calculations using paid completion factors.
+- IBNR calculation from paid and completed claims.
+- Grouped experience summaries by fields such as group, product, line of business, and incurred period.
+- Rolling-window summaries, including rolling 12-month MLR and PMPM views.
+- Trend summaries comparing two periods.
+- Component-level driver analysis for categories such as inpatient, outpatient, professional, pharmacy, rebates, and non-fee-for-service expenses.
+- Validation utilities for common actuarial data issues.
+
+## Package structure
 
 ```text
 actuarialpy/
-├── metrics.py       # ratios, PMPM/PSPM, A/E, frequency, severity, adequacy
-├── columns.py       # validation helpers, not general pandas wrappers
-├── periods.py       # month/quarter/year periods and durations
-├── completion.py    # completion math, completed claims, IBNR, simple triangles
-├── profiles.py      # light profile defaults such as health ratio name = mlr
-├── experience.py    # grouped summaries and multi-view summaries
-├── components.py    # component/category summaries and driver analysis
-├── compare.py       # variance, percent change, basis point change
-├── trend.py         # trend factors, projection, current/prior trend summaries
-├── rolling.py       # rolling 12 or other rolling-window summaries
-├── cohorts.py       # first-year, cohort, and duration summaries
-├── forecast.py      # simple expected values and actual-vs-expected comparisons
-└── reporting.py     # Excel workbook output
+├── metrics.py       # Core ratios, exposure-normalized metrics, and actuarial primitives
+├── completion.py    # Completion factor and IBNR calculations
+├── experience.py    # Grouped experience summaries
+├── rolling.py       # Rolling-window experience summaries
+├── trend.py         # Period-over-period trend summaries
+├── components.py    # Component summaries and driver analysis
+├── periods.py       # Period and duration helpers
+├── compare.py       # Variance and change calculations
+├── validation.py    # Validation utilities
+└── reporting.py     # Basic Excel report export
 ```
 
-## Core primitives
+## Basic metrics
 
 ```python
-from actuarialpy import loss_ratio, pmpm, actual_to_expected
+from actuarialpy.metrics import loss_ratio, pmpm, actual_to_expected
 
 loss_ratio(850_000, 1_000_000)
 # 0.85
@@ -46,7 +58,7 @@ actual_to_expected(1_100_000, 1_000_000)
 
 ## Completion factors and IBNR
 
-Join factor tables using pandas directly, especially when the factor table has multiple factor columns.
+ActuarialPy assumes completion factors are supplied by the user. Joins between claims and factor tables should generally be handled directly with pandas.
 
 ```python
 claims = claims.merge(
@@ -57,14 +69,14 @@ claims = claims.merge(
 )
 ```
 
-Then use ActuarialPy for the actuarial completion math.
+After the factors are joined, ActuarialPy can calculate completed claims and IBNR.
 
 ```python
 from actuarialpy.completion import complete_claim_components
 
 claims = complete_claim_components(
     claims,
-    {
+    component_factor_map={
         "inpatient_claims": "inpatient_completion_factor",
         "outpatient_claims": "outpatient_completion_factor",
         "professional_claims": "professional_completion_factor",
@@ -73,7 +85,7 @@ claims = complete_claim_components(
 )
 ```
 
-This adds columns such as:
+This adds completed and IBNR columns for each component, such as:
 
 ```text
 inpatient_claims_completed
@@ -82,12 +94,17 @@ outpatient_claims_completed
 outpatient_claims_ibnr
 ```
 
-## Experience summary
+## Experience summaries
 
-For member-level monthly data, create a true exposure column first.
+For member-level monthly data, create a true exposure field before summarizing.
 
 ```python
 claims["member_months"] = 1
+```
+
+Create a total expense column using pandas. For example:
+
+```python
 claims["total_expense"] = claims[
     [
         "inpatient_claims_completed",
@@ -100,7 +117,7 @@ claims["total_expense"] = claims[
 ].sum(axis=1)
 ```
 
-Then summarize.
+Then summarize the experience.
 
 ```python
 from actuarialpy.experience import summarize_experience
@@ -111,11 +128,11 @@ summary = summarize_experience(
     expense_cols=["total_expense"],
     revenue_cols=["premium"],
     exposure_cols=["member_months"],
-    profile="health",  # sets ratio column to mlr
+    ratio_name="mlr",
 )
 ```
 
-Default output labels remain generic:
+The default output uses generic field names:
 
 ```text
 total_expense
@@ -125,84 +142,11 @@ expense_pmpm
 revenue_pmpm
 ```
 
-If you want claim/premium-specific labels, pass them explicitly:
+ActuarialPy intentionally does not automatically rename `total_expense` to `total_claims` or `total_revenue` to `total_premium`, since the numerator and denominator may include items beyond claims or premium.
 
-```python
-summary = summarize_experience(
-    claims,
-    groupby=["group_id"],
-    expense_cols=["completed_claims"],
-    revenue_cols=["premium"],
-    total_expense_name="total_claims",
-    total_revenue_name="total_premium",
-    ratio_name="mlr",
-)
-```
+## Rolling summaries
 
-## Component view
-
-```python
-from actuarialpy.components import summarize_components
-
-components = summarize_components(
-    claims,
-    groupby=["incurred_date"],
-    component_cols=[
-        "inpatient_claims_completed",
-        "outpatient_claims_completed",
-        "professional_claims_completed",
-        "pharmacy_claims_completed",
-        "pharmacy_rebates",
-        "non_ffs_expenses",
-    ],
-    exposure_col="member_months",
-)
-```
-
-## Component driver analysis
-
-```python
-from actuarialpy.components import component_driver_analysis
-
-claims["year"] = claims["incurred_date"].dt.year
-
-drivers = component_driver_analysis(
-    claims,
-    period_col="year",
-    prior_period=2025,
-    current_period=2026,
-    groupby=["product_code"],
-    component_cols=[
-        "inpatient_claims_completed",
-        "outpatient_claims_completed",
-        "professional_claims_completed",
-        "pharmacy_claims_completed",
-        "pharmacy_rebates",
-        "non_ffs_expenses",
-    ],
-    exposure_col="member_months",
-)
-```
-
-This explains which categories drove the total PMPM change.
-
-## Trend summary
-
-```python
-from actuarialpy.trend import trend_summary
-
-trend = trend_summary(
-    claims,
-    period_col="year",
-    prior_period=2025,
-    current_period=2026,
-    groupby=["product_code"],
-    amount_col="total_expense",
-    exposure_col="member_months",
-)
-```
-
-## Rolling view
+Rolling summaries are useful for reviewing longer-term experience patterns, such as rolling 12-month MLR.
 
 ```python
 from actuarialpy.rolling import rolling_summary
@@ -230,59 +174,57 @@ expense_pmpm
 revenue_pmpm
 ```
 
-Incomplete windows are omitted by default.
+Incomplete rolling windows are omitted by default.
 
-## Cohort / duration view
+## Trend summaries
 
-```python
-from actuarialpy.cohorts import cohort_summary
-
-first_year = cohort_summary(
-    claims,
-    entity_col="group_id",
-    date_col="incurred_date",
-    start_date_col="effective_date",
-    duration_months=12,
-    expense_cols=["total_expense"],
-    revenue_cols=["premium"],
-    exposure_cols=["member_months"],
-)
-```
-
-## Forecast and actual-to-expected
+Trend summaries compare experience between two periods. Comparisons can be based on a period column, such as calendar year.
 
 ```python
-from actuarialpy.forecast import forecast_experience, compare_actual_to_expected
+from actuarialpy.trend import trend_summary
 
-forecast = forecast_experience(
+claims["year"] = claims["incurred_date"].dt.year
+
+trend = trend_summary(
     claims,
-    rate_col="base_claims_pmpm",
+    period_col="year",
+    prior_period=2025,
+    current_period=2026,
+    groupby=["product_code"],
+    amount_col="total_expense",
     exposure_col="member_months",
-    annual_trend=0.07,
-    months_forward=12,
-)
-
-comparison = compare_actual_to_expected(
-    actual=actual_summary,
-    expected=forecast,
-    on=["group_id", "incurred_date"],
-    actual_col="total_expense",
-    expected_col="expected_expense",
 )
 ```
 
-## Excel report output
+This compares PMPM experience between the prior and current periods.
+
+## Component driver analysis
+
+Component driver analysis explains which categories drove a change in total PMPM.
 
 ```python
-from actuarialpy.reporting import to_excel_report
+from actuarialpy.components import component_driver_analysis
 
-to_excel_report(
-    {
-        "group_product": group_product,
-        "monthly": monthly,
-        "rolling_12": rolling,
-        "components": components,
-    },
-    "experience_report.xlsx",
+drivers = component_driver_analysis(
+    claims,
+    period_col="year",
+    prior_period=2025,
+    current_period=2026,
+    groupby=["product_code"],
+    component_cols=[
+        "inpatient_claims_completed",
+        "outpatient_claims_completed",
+        "professional_claims_completed",
+        "pharmacy_claims_completed",
+        "pharmacy_rebates",
+        "non_ffs_expenses",
+    ],
+    exposure_col="member_months",
 )
 ```
+
+The output shows prior PMPM, current PMPM, PMPM change, component trend, and contribution to the total PMPM change.
+
+## Development status
+
+ActuarialPy is in early development. The current focus is on reliable core experience-analysis workflows before adding more complex features such as forecasting, seasonality, credibility, or advanced reserving methods.
