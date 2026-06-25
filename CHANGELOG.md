@@ -1,5 +1,139 @@
 # Changelog
 
+## 0.26.0
+
+Adds `fit_trend` -- developing a trend from history by log-linear regression, the
+counterpart to the existing two-point and application trend tools. Returns the fitted
+annual trend with goodness of fit and a confidence interval; stays dependency-free
+(NumPy only, including the Student-t critical value). The library fits the trend; it does
+not select it.
+
+### Added
+
+- `fit_trend(df, *, value_col, date_col, exposure_col=None, freq="M", min_periods=3,
+  confidence=0.95)` in `trend`: aggregates to the period grain, forms the rate
+  (`value / exposure` when `exposure_col` is given, else `value`), and fits
+  `log(rate) = intercept + slope * t` (t in years from the first period) by OLS. The
+  fitted annual trend is `exp(slope) - 1`. Time is taken from real dates, so an occasional
+  missing period is handled correctly; non-positive rates raise.
+- `TrendFit` result (frozen dataclass): `annual_trend`, `r_squared`, `std_error`
+  (delta-method SE of the annual trend), `ci` / `ci_low` / `ci_high` (confidence interval,
+  asymmetric -- transformed from the log-scale slope interval), `confidence`, `n_periods`,
+  `slope`, `intercept`, and a `.factor(months)` bridge to application
+  (`(1 + annual_trend) ** (months / 12)`).
+- Dependency-free Student-t and inverse-normal quantiles (Acklam + Abramowitz-Stegun
+  26.7.5) backing the confidence interval -- verified against tabulated critical values
+  (within ~0.001 for df >= 5).
+
+### Examples
+
+- `trend_and_forecast.py` gains a `fit_trend` section: it fits on raw vs deseasonalized
+  history (showing the recommended `complete -> deseasonalize -> fit_trend` order sharpens
+  the fit, R^2 ~0.27 -> ~0.99), and contrasts the regression's robustness to a single odd
+  month against a two-point CAGR.
+
+## 0.25.0
+
+Expands the deterministic reserving methods: alongside chain ladder, `develop_ultimate`
+adds Bornhuetter-Ferguson, Benktander, and Cape Cod, selected by a `method=` parameter.
+All blend emerged-to-date with an a priori, which the library takes as input -- it applies
+a method, it does not pick the a priori or the exposure base. Stochastic reserving (Mack,
+bootstrap) is intentionally out of scope: it shifts the library from a deterministic
+point-estimate engine toward a stochastic-reserving package, beyond the intent of basic
+day-to-day tools.
+
+### Added
+
+- `develop_ultimate(df, factors, *, method, value_col, date_col=None, valuation_date=None,
+  development_col=None, apriori_col=None, exposure_col=None, by=None, ...)` in `reserving`.
+  Methods:
+  - `"chain_ladder"` -- `paid / emerged` (equivalent to `apply_completion`).
+  - `"bornhuetter_ferguson"` -- `paid + apriori * (1 - emerged)`; stable for immature
+    periods. Requires `apriori_col` (an expected ultimate per row).
+  - `"benktander"` -- one BF iteration using the BF ultimate as the a priori; a credibility
+    blend sitting between BF and chain ladder. Requires `apriori_col`.
+  - `"cape_cod"` -- BF with the a priori derived from the data: one expected loss ratio per
+    segment, `sum(paid) / sum(exposure * emerged)`. Requires `exposure_col`.
+  All four share the completion-factor join (flat or per-segment via `by=`, beyond-the-
+  triangle rows fully emerged), and BF/Benktander/Cape Cod accept `by=` per-segment tables.
+
+### Changed
+
+- The proportion-emerged-per-row computation is now a shared internal helper behind both
+  `apply_completion` and `develop_ultimate`, so the development-period join, the
+  beyond-the-triangle rule, and the grouped/flat factor handling are identical across
+  methods. `apply_completion` behaviour is unchanged.
+
+### Examples
+
+- `reserving_ibnr.py` gains a method-comparison section: chain ladder vs Bornhuetter-
+  Ferguson vs Benktander vs Cape Cod on the latest diagonal, showing chain ladder swinging
+  for the greenest months while the a-priori-anchored methods stay stable.
+
+## 0.24.0
+
+A maintenance and confidence release: an end-to-end renewal example, a fix to
+`development_months` for mixed scalar/Series arguments, and property-based tests pinning
+the library's advertised invariants.
+
+### Fixed
+
+- `development_months` (and its `lag_months` alias) now accepts a scalar, a Series, or
+  array-like for *either* argument in any combination -- e.g.
+  `development_months(df["incurred"], "2024-12-31")` (a column of dates against a single
+  valuation date), which previously raised `AttributeError`. Internal callers are
+  unaffected (they already passed aligned Series).
+
+### Added
+
+- `examples/renewal.py`: a complete group renewal threading the individual surfaces into
+  one study -- complete immature months to ultimate, trend, apply area / benefit
+  relativities (`adjust`), pool large claimants, credibility-blend the pooled experience
+  with the manual, load for retention, and read off the indicated rate change, with the
+  projected claims PMPM printed as it builds.
+- Property-based tests (`tests/test_properties.py`, `hypothesis`) asserting invariants over
+  many generated inputs: deseasonalize/reseasonalize are inverses; `adjust` multiply/divide
+  are inverses; an `audit_col` accumulates exactly the product of the factors applied; the
+  factor join is by value and order-preserving regardless of index; chain-ladder completion
+  factors are bounded in `(0, 1]`, monotone, and reach `1.0`; and `development_months`
+  counts the months added to an origin. `hypothesis` added to the `dev` extra.
+
+## 0.23.0
+
+Adds `adjust` -- the general factor-application lens behind experience-period
+restatement (trend, benefit / area / demographic relativities, network discounts). Joins a
+factor to each row by a key and multiplies or divides the value by it, with an optional
+cumulative audit trail. Completion and seasonality are recast as specializations of the
+same move, all now sharing one validated join primitive.
+
+### Added
+
+- `adjust(df, factors, *, value_col, on=None, by=None, how="multiply", factor_col="factor",
+  out_col=None, audit_col=None, default=None)` in the new `adjustments` module. ``factors``
+  is a scalar (one factor for all rows), a Series indexed by ``on``, or a tidy DataFrame
+  keyed by ``by + on``. ``how="divide"`` backs a factor out; ``default`` controls the
+  treatment of keys absent from the table (``NaN`` surfaced by default, ``1.0`` for "no
+  adjustment"); ``audit_col`` accumulates the net multiplier applied across a chain of
+  adjustments, one value per row.
+- `Experience.adjust(factors, *, on=None, columns=None, by=None, how="multiply",
+  factor_col="factor", audit_col=None, default=None)`: restates the expense column(s) in
+  place under the same name, so a renewal reads as one composable chain
+  (`exp.complete(...).adjust(trend).adjust(relativity, on="plan")`), with the audit trail
+  carried across it. The general counterpart to `complete` and `deseasonalize`.
+- `factor_lookup(df, factors, keys, *, factor_col, default=None)` in `columns`: the single
+  factor-join primitive (join by value on one or more existing key columns, fan-out
+  guarded, index-independent, surfaced gaps) now shared by `adjust`, grouped completion,
+  and grouped seasonality.
+
+### Changed
+
+- `grouped_factor_lookup` is now a thin wrapper over `factor_lookup` for the derived-key
+  case (season from a date, development period); behaviour is unchanged. Completion and
+  seasonality are unchanged behaviourally but now sit on the shared primitive --
+  `deseasonalize`/`apply_seasonality` are `adjust` on a derived season key, and
+  `apply_completion` is `adjust` on a derived development-period key plus its
+  beyond-the-triangle "fully complete" rule (verified by equivalence tests).
+
 ## 0.22.0
 
 Adds grouped (per-segment) factor joins for both completion and seasonality, so factors

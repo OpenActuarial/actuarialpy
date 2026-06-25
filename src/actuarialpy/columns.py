@@ -48,6 +48,42 @@ def ensure_unique_keys(df: pd.DataFrame, keys: str | Iterable[str], *, name: str
         raise ValueError(f"{name} has duplicate keys for {key_list}. Examples: {examples}")
 
 
+def factor_lookup(
+    df: pd.DataFrame,
+    factors: pd.DataFrame,
+    keys: str | Iterable[str],
+    *,
+    factor_col: str,
+    default: float | None = None,
+) -> np.ndarray:
+    """Join a factor onto ``df`` by value on one or more existing key columns.
+
+    The single factor-join primitive behind grouped completion, seasonality, and
+    :func:`adjust`. ``factors`` is a tidy table containing ``keys`` and ``factor_col``;
+    each row of ``df`` is matched on its ``keys`` values. The factor table must be unique
+    on ``keys`` -- a duplicate would fan rows out on the join -- so this raises otherwise.
+    Returns a float array aligned to ``df``'s row order (the frame's own index never
+    participates). An absent key gives ``default`` (``NaN`` when ``default`` is ``None``
+    -- a surfaced gap, never silently filled).
+    """
+    key_cols = as_list(keys)
+    if not key_cols:
+        raise ValueError("keys must name at least one column")
+    validate_columns(factors, key_cols + [factor_col])
+    validate_columns(df, key_cols)
+    ensure_unique_keys(factors, key_cols, name="factor table")
+    if len(key_cols) == 1:
+        lookup = factors.set_index(key_cols[0])[factor_col]
+        factor = np.array(df[key_cols[0]].map(lookup), dtype="float64")
+    else:
+        lookup = factors.set_index(key_cols)[factor_col]
+        row_keys = pd.MultiIndex.from_frame(df[key_cols])
+        factor = np.array(lookup.reindex(row_keys), dtype="float64")
+    if default is not None:
+        factor = np.where(np.isnan(factor), float(default), factor)
+    return factor
+
+
 def grouped_factor_lookup(
     df: pd.DataFrame,
     factors: pd.DataFrame,
@@ -59,24 +95,19 @@ def grouped_factor_lookup(
 ) -> np.ndarray:
     """Look up a per-segment factor by ``(group..., key)``, joining by value.
 
-    ``factors`` is a tidy table with grouping column(s) ``by``, a key column
-    (``key_col``) and a factor column (``factor_col``). Each row of ``df`` is matched on
-    its group-column values plus ``key_values`` (positional, in row order). The factor
-    table must be unique on ``by + [key_col]`` -- a duplicate would fan rows out on the
-    join -- so this raises otherwise. Returns a float array with ``NaN`` where the
-    ``(group, key)`` pair is absent; the frame's own index never participates, so order
-    is preserved regardless of index.
+    Thin wrapper over :func:`factor_lookup` for the case where the key is a *derived*
+    quantity (``key_values``, positional in row order) rather than an existing column --
+    e.g. a season extracted from a date, or a development period. ``factors`` is a tidy
+    table with grouping column(s) ``by``, a key column (``key_col``) and ``factor_col``;
+    it must be unique on ``by + [key_col]``. Returns a float array with ``NaN`` where the
+    ``(group, key)`` pair is absent; order is preserved regardless of index.
     """
     by_cols = as_list(by)
     if not by_cols:
         raise ValueError("Pass by=... naming the grouping column(s) for a per-segment factor table.")
-    validate_columns(factors, by_cols + [key_col, factor_col])
-    ensure_unique_keys(factors, by_cols + [key_col], name="factor table")
-    lookup = factors.set_index(by_cols + [key_col])[factor_col]
     key_frame = df[by_cols].reset_index(drop=True).copy()
     key_frame[key_col] = key_values
-    row_keys = pd.MultiIndex.from_frame(key_frame[by_cols + [key_col]])
-    return np.array(lookup.reindex(row_keys), dtype="float64")
+    return factor_lookup(key_frame, factors, by_cols + [key_col], factor_col=factor_col)
 
 
 def sum_columns(df: pd.DataFrame, cols: str | Iterable[str], *, min_count: int = 1) -> pd.Series:

@@ -20,6 +20,7 @@ from actuarialpy.experience import status_summary, summarize_experience, summari
 from actuarialpy.lifecycle import derive_status
 from actuarialpy.metrics import per_exposure, safe_divide
 from actuarialpy.pooling import pool_losses
+from actuarialpy.adjustments import adjust as _adjust
 from actuarialpy.reserving import apply_completion as _apply_completion
 from actuarialpy.rolling import rolling_summary
 from actuarialpy.seasonality import deseasonalize as _deseasonalize
@@ -209,6 +210,56 @@ class Experience:
                 development_col=development_col,
                 by=by,
                 out_col=col,
+                copy=False,
+            )
+        return self.with_roles(data=data, copy=False)
+
+    def adjust(
+        self,
+        factors: float | int | pd.Series | pd.DataFrame,
+        *,
+        on: str | list[str] | None = None,
+        columns: str | list[str] | None = None,
+        by: str | list[str] | None = None,
+        how: str = "multiply",
+        factor_col: str = "factor",
+        audit_col: str | None = None,
+        default: float | None = None,
+    ) -> "Experience":
+        """Return a new ``Experience`` with an expense column restated by a factor.
+
+        The general counterpart to :meth:`complete` and :meth:`deseasonalize`: joins a
+        factor by the key ``on`` (a column already in the frame, optionally within ``by``
+        segments) and multiplies -- or, with ``how="divide"``, divides -- the selected
+        column(s) in place under the same name, so every downstream view composes on the
+        restated series. ``factors`` is a scalar (one factor for all rows), a Series
+        indexed by ``on``, or a tidy DataFrame keyed by ``by + on``.
+
+        This is the spine of experience-period restatement -- trend, benefit / area /
+        demographic relativities, network discounts -- where the methodology is supplied
+        as the factors rather than encoded here. Chain freely
+        (``exp.complete(...).adjust(trend).adjust(area, on="region")``); with ``audit_col``
+        the cumulative restatement multiplier is carried across the chain, one value per
+        row, for a reviewable audit trail. An absent key surfaces as ``NaN`` unless
+        ``default`` is given (``default=1.0`` to mean "no adjustment for this key").
+        """
+        cols = as_list(columns) if columns is not None else as_list(self.expense)
+        if not cols:
+            raise ValueError("No columns to adjust; pass columns=... or bind an expense role.")
+        validate_columns(self.data, cols + as_list(on) + as_list(by))
+        data = self.data.copy()
+        for col in cols:
+            data = _adjust(
+                data,
+                factors,
+                value_col=col,
+                on=on,
+                by=by,
+                how=how,
+                factor_col=factor_col,
+                out_col=col,
+                audit_col=audit_col,
+                default=default,
                 copy=False,
             )
         return self.with_roles(data=data, copy=False)

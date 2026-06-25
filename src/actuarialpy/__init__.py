@@ -28,6 +28,7 @@ from actuarialpy.reserving import (
     chain_ladder_by,
     completion_factors,
     completion_factors_by,
+    develop_ultimate,
     development_months,
     ibnr,
     lag_months,
@@ -52,6 +53,8 @@ from actuarialpy.lifecycle import (
     is_in_force,
 )
 from actuarialpy.banding import assign_band, summarize_by_band
+from actuarialpy.adjustments import adjust
+from actuarialpy.columns import factor_lookup
 from actuarialpy.margins import add_margin, margin, margin_ratio
 from actuarialpy.pooling import excess_over_threshold, pool_losses
 from actuarialpy.experience import status_summary, summarize_experience, summarize_views
@@ -59,7 +62,9 @@ from actuarialpy.expected import summarize_actual_vs_expected
 from actuarialpy.claimants import summarize_claimants, top_claimants, large_claimant_flags, claim_concentration
 from actuarialpy.rolling import rolling_summary
 from actuarialpy.trend import (
+    TrendFit,
     annualized_trend,
+    fit_trend,
     midpoint_trend_factor,
     period_change,
     project_forward,
@@ -81,6 +86,8 @@ from actuarialpy.seasonality import (
 __all__ = [
     "Experience",
     "actual_to_expected",
+    "adjust",
+    "factor_lookup",
     "combined_ratio",
     "expense_ratio",
     "frequency",
@@ -104,6 +111,7 @@ __all__ = [
     "completion_factors",
     "completion_factors_by",
     "apply_completion",
+    "develop_ultimate",
     "ibnr",
     "lag_months",
     "development_months",
@@ -127,6 +135,8 @@ __all__ = [
     "midpoint_trend_factor",
     "period_change",
     "project_forward",
+    "fit_trend",
+    "TrendFit",
     "trend_factor",
     "trend_summary",
     "component_driver_analysis",
@@ -166,4 +176,4 @@ __all__ = [
     "apply_seasonality",
 ]
 
-__version__ = "0.22.0"
+__version__ = "0.26.0"

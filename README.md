@@ -34,15 +34,20 @@ export.
 - **Ratios and per-exposure metrics** — loss ratio, medical loss ratio, combined
   and expense ratios, pure premium, frequency, severity, and PMPM / PSPM / PEPM /
   generic per-exposure metrics.
-- **Reserving** — development triangles and chain-ladder completion factors,
-  ultimates, and IBNR, overall or per segment, with completeness validation.
+- **Reserving** — development triangles, completion factors, ultimates, and IBNR
+  (overall or per segment), and a choice of development method — chain ladder,
+  Bornhuetter-Ferguson, Benktander, Cape Cod.
 - **Credibility** — greatest-accuracy credibility (Bühlmann and Bühlmann-Straub)
   and direct credibility-weighting of any estimate.
-- **Trend and forecasting** — annualized trend, midpoint trend factors, projecting
-  values forward, period-over-period comparisons, and rate-based forecasts.
+- **Trend and forecasting** — fit a trend from history (log-linear, with goodness of fit
+  and a confidence interval), apply trend factors, project values forward, period-over-
+  period comparisons, and rate-based forecasts.
 - **Seasonality and working days** — per-month working-day counts (holidays included)
   and classical seasonal factors (overall or per segment) to deseasonalize history or
   project a pattern forward.
+- **Adjustments and restatement** — `adjust` joins a factor by key (scalar, per-key, or
+  per-segment) and multiplies or divides a column in place, with an optional cumulative
+  audit trail — the general spine behind completion, trend, and relativity loads.
 - **Lifecycle and exposure** — in-force determination, earned exposure, tenure,
   and active / first-year / termed status.
 - **Pooling, banding, and margins** — pooling points and excess losses, size
@@ -149,6 +154,7 @@ views = exp.views({"overall": None, "by_group": "group_id", "by_product": "produ
 | `margin(...)` | underwriting margins |
 | `credibility_weighted(groupby, z, metric)` | credibility-blended estimates by group |
 | `deseasonalize(factors)` / `complete(factors, valuation_date)` | new Experience with seasonality removed / claims developed to ultimate |
+| `adjust(factors, on, by, how, audit_col)` | new Experience with a column restated by a joined factor (trend, relativity, discount) |
 | `filter(...)` / `with_roles(...)` | derive a new Experience |
 
 ## Reserving
@@ -244,11 +250,80 @@ clean.rolling(12)        # runs on completed claims; only the green months chang
 clean = exp.complete(cf_by_lob, valuation_date="2024-12-31", by="line_of_business")
 ```
 
+**Other development methods.** Chain ladder takes the entire unemerged tail from the data,
+which is volatile for green periods -- a thin latest diagonal drives the whole estimate.
+`develop_ultimate` offers the standard alternatives that blend emerged-to-date with an a
+priori, selected by a `method=` parameter and all sharing the same completion-factor join:
+
+```python
+from actuarialpy import develop_ultimate
+
+# Bornhuetter-Ferguson: paid + apriori * (1 - emerged); stable for immature periods
+bf = develop_ultimate(
+    latest_diagonal, factors, method="bornhuetter_ferguson",
+    value_col="claims", date_col="incurred_month", valuation_date="2024-12-31",
+    apriori_col="expected_ultimate",   # a plan / budget / manual x exposure -- an input
+)
+# bf["claims_ultimate"] is paid where fully emerged, anchored to the a priori where green
+```
+
+`method=` also takes `"chain_ladder"` (equivalent to `apply_completion`), `"benktander"`
+(one BF iteration, sitting between BF and chain ladder), and `"cape_cod"` (BF with the a
+priori derived from the data as a single expected loss ratio per segment,
+`sum(paid) / sum(exposure * emerged)`, taking `exposure_col` instead of `apriori_col`).
+BF, Benktander, and Cape Cod all accept `by=` for per-segment factor tables. As everywhere,
+the library applies the method; it does not pick the a priori or the exposure base.
+
 Run completion **before** deseasonalizing and trending — `complete → deseasonalize →
 trend` — since deseasonalizing paid claims would tangle claims runout with the calendar
 effect. Only the numerator is developed; exposure is left untouched.
 
-## Credibility
+## Adjustments and restatement
+
+Much of experience rating is one move repeated: take a base amount and carry it through a
+chain of factors — completion to ultimate, trend, benefit relativity, area, demographic
+loads, network discounts. `adjust` is that move, once: join a factor to each row by a key
+and multiply (or divide) the value by it. It is the general case of which `complete` and
+`deseasonalize` are specializations — those derive their key from a date (a development
+period, a season); `adjust` keys on an ordinary column. All three share the same validated
+join (unique-key / fan-out guard, surfaced gaps, index-independent).
+
+```python
+from actuarialpy import adjust
+
+# a scalar (one trend factor for every row)
+adjust(experience, 1.072, value_col="claims")
+
+# a Series indexed by the key column
+area = pd.Series({"urban": 1.08, "suburban": 1.00, "rural": 0.94})
+adjust(experience, area, value_col="claims", on="region")
+
+# a tidy per-segment table (factor varies by segment), joined on by + on
+adjust(experience, benefit_relativity, value_col="claims", on="plan", by="line_of_business")
+```
+
+`how="multiply"` (default) loads the value up; `how="divide"` backs a factor out. An absent
+key surfaces as `NaN` (never silently filled); pass `default=1.0` when a key missing from
+the table should mean "no adjustment". The methodology stays *input* — `adjust` takes the
+trend, the relativity, the discount as given and applies them mechanically; it does not
+encode any particular method.
+
+On the `Experience` facade, `adjust` restates the expense column in place under the same
+name, so a renewal reads as one composable chain — and `audit_col` carries the cumulative
+restatement multiplier across the chain, one value per row, for a reviewable trail:
+
+```python
+restated = (
+    exp.complete(cf_by_lob, valuation_date="2024-12-31", by="line_of_business")
+       .adjust(1.072, audit_col="restatement")                       # trend
+       .adjust(benefit_relativity, on="plan", by="line_of_business", audit_col="restatement")
+       .adjust(area, on="region", audit_col="restatement")
+)
+# restated.data["restatement"] is the total factor applied to each row's claims
+restated.by()   # grouped loss ratios on the fully restated claims
+```
+
+
 
 Greatest-accuracy credibility, either fit empirically from per-risk observations or
 constructed from known structural parameters.
@@ -309,6 +384,31 @@ summary = trend_summary(
     amount_col="paid", exposure_col="member_months", groupby="product_code",
 )
 ```
+
+**Fitting trend from data.** The functions above *apply* a trend, or measure it between
+two points. To *develop* a trend from history, `fit_trend` regresses `log(rate)` on time
+(log-linear OLS) over the whole series -- using every period, so one noisy month doesn't
+swing it -- and returns a `TrendFit` with the fitted annual trend, goodness of fit, and a
+confidence
+interval, which is what a developed (rather than received) trend is judged on:
+
+```python
+from actuarialpy import fit_trend
+
+fit = fit_trend(history, value_col="claims", date_col="month", exposure_col="member_months")
+fit.annual_trend          # e.g. 0.072  (exp(slope) - 1)
+fit.r_squared, fit.ci     # goodness of fit, and the confidence interval
+fit.factor(18)            # bridge to application: (1 + annual_trend) ** (18/12)
+```
+
+It fits on the rate (`claims / member_months`) when an exposure is given, otherwise on
+`value_col` directly; unlike a two-point `annualized_trend`, one odd month barely moves it,
+and it reports how well the exponential fits. Time is measured from real dates, so a
+missing period is handled correctly. Run it on completed, deseasonalized history
+(`complete → deseasonalize → fit_trend`) so runout and seasonality don't bias the slope,
+then apply the result with `trend_factor` / `fit.factor(...)` or `adjust`. As always, the
+library fits the trend; it does not select it -- the window, the rate basis, benefit
+leveraging, and the blend with external trends remain judgment.
 
 Rate-based forecasting lives in the forecast module: `forecast_experience(...)`
 applies a trended per-exposure rate to projected exposure, with

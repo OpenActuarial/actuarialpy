@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "actuarialpy"
-version = "0.22.0"
+version = "0.26.0"
 description = "Experience-centered Python tools for actuarial analysis."
 readme = "README.md"
 requires-python = ">=3.9"
@@ -33,7 +33,7 @@ dependencies = [
 
 [project.optional-dependencies]
 excel = ["openpyxl>=3.1"]
-dev = ["pytest>=7", "build>=1", "twine>=5"]
+dev = ["pytest>=7", "hypothesis>=6", "build>=1", "twine>=5"]
 
 [project.urls]
 Homepage = "https://github.com/actuarialpy/actuarialpy-core"

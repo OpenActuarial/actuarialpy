@@ -103,6 +103,37 @@ def main() -> None:
     print("\nfirst development period >= 95% complete, by line:",
           {k: int(v) for k, v in pct95.items()})
 
+    section("5. develop_ultimate: chain ladder vs BF vs Benktander vs Cape Cod")
+    # An a priori expected ultimate per origin (a plan/budget -- an INPUT) and an exposure.
+    # Here the plan is the book-average chain-ladder ultimate; premium implies an 80% target.
+    cl_ultimate = ap.develop_ultimate(
+        latest, cf, method="chain_ladder", value_col="paid_to_date", date_col="origin_month", valuation_date=valuation,
+    )["paid_to_date_ultimate"]
+    plan = float(cl_ultimate.mean())
+    basis = latest.assign(apriori=plan, premium=plan / 0.80)
+
+    methods = {
+        "chain_ladder": {},
+        "bornhuetter_ferguson": {"apriori_col": "apriori"},
+        "benktander": {"apriori_col": "apriori"},
+        "cape_cod": {"exposure_col": "premium"},
+    }
+    compare = latest[["origin_month", "paid_to_date"]].copy()
+    for name, extra in methods.items():
+        out = ap.develop_ultimate(
+            basis, cf, method=name, value_col="paid_to_date",
+            date_col="origin_month", valuation_date=valuation, **extra,
+        )
+        compare[name] = out["paid_to_date_ultimate"].to_numpy()
+
+    recent = compare.tail(6).assign(origin_month=lambda d: d["origin_month"].dt.strftime("%Y-%m"))
+    fmt = {c: "{:,.0f}".format for c in compare.columns if c != "origin_month"}
+    print(recent.to_string(index=False, formatters=fmt))
+    print(f"\n(a priori plan = ${plan:,.0f} per origin)")
+    print("For the greenest months a thin diagonal makes chain ladder swing, while BF and")
+    print("Cape Cod stay anchored to the plan -- which is why BF is the workhorse for")
+    print("immature periods. Mature origins agree (all are essentially paid-to-date).")
+
 
 if __name__ == "__main__":
     main()

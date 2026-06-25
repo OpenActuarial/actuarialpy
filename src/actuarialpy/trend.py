@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any
 
+import numpy as np
 import pandas as pd
 
 from actuarialpy.columns import as_list, validate_columns
@@ -185,3 +187,163 @@ def trend_summary(
         out.insert(len(groups) + 2, "current_start", pd.to_datetime(current_start))
         out.insert(len(groups) + 3, "current_end", pd.to_datetime(current_end))
     return out
+
+
+def _inverse_normal_cdf(p: float) -> float:
+    """Standard-normal quantile via Acklam's rational approximation (no SciPy)."""
+    a = [-3.969683028665376e+01, 2.209460984245205e+02, -2.759285104469687e+02,
+         1.383577518672690e+02, -3.066479806614716e+01, 2.506628277459239e+00]
+    b = [-5.447609879822406e+01, 1.615858368580409e+02, -1.556989798598866e+02,
+         6.680131188771972e+01, -1.328068155288572e+01]
+    c = [-7.784894002430293e-03, -3.223964580411365e-01, -2.400758277161838e+00,
+         -2.549732539343734e+00, 4.374664141464968e+00, 2.938163982698783e+00]
+    d = [7.784695709041462e-03, 3.224671290700398e-01, 2.445134137142996e+00, 3.754408661907416e+00]
+    p_low = 0.02425
+    if p < p_low:
+        q = np.sqrt(-2 * np.log(p))
+        return (((((c[0] * q + c[1]) * q + c[2]) * q + c[3]) * q + c[4]) * q + c[5]) / \
+               ((((d[0] * q + d[1]) * q + d[2]) * q + d[3]) * q + 1)
+    if p > 1 - p_low:
+        q = np.sqrt(-2 * np.log(1 - p))
+        return -(((((c[0] * q + c[1]) * q + c[2]) * q + c[3]) * q + c[4]) * q + c[5]) / \
+               ((((d[0] * q + d[1]) * q + d[2]) * q + d[3]) * q + 1)
+    q = p - 0.5
+    r = q * q
+    return (((((a[0] * r + a[1]) * r + a[2]) * r + a[3]) * r + a[4]) * r + a[5]) * q / \
+           (((((b[0] * r + b[1]) * r + b[2]) * r + b[3]) * r + b[4]) * r + 1)
+
+
+def _student_t_ppf(p: float, df: float) -> float:
+    """Student-t quantile via the Cornish-Fisher / A&S 26.7.5 expansion (no SciPy).
+
+    Accurate to within ~0.001 of tabulated values for df >= 5; widens (conservatively)
+    for very small df. Adequate for trend confidence intervals.
+    """
+    x = _inverse_normal_cdf(p)
+    g1 = (x**3 + x) / 4
+    g2 = (5 * x**5 + 16 * x**3 + 3 * x) / 96
+    g3 = (3 * x**7 + 19 * x**5 + 17 * x**3 - 15 * x) / 384
+    g4 = (79 * x**9 + 776 * x**7 + 1482 * x**5 - 1920 * x**3 - 945 * x) / 92160
+    return x + g1 / df + g2 / df**2 + g3 / df**3 + g4 / df**4
+
+
+@dataclass(frozen=True)
+class TrendFit:
+    """Result of :func:`fit_trend`: an exponential trend fitted to a rate series.
+
+    ``annual_trend`` is the fitted multiplicative annual trend (``exp(slope) - 1`` on the
+    log scale). ``r_squared`` is the goodness of fit, ``std_error`` the delta-method
+    standard error of ``annual_trend``, and ``(ci_low, ci_high)`` its confidence interval
+    (asymmetric -- the endpoints are transformed from the log-scale slope interval).
+    ``slope`` and ``intercept`` describe the underlying ``log(value) = intercept + slope * t``
+    fit with ``t`` measured in years from the first period.
+    """
+
+    annual_trend: float
+    r_squared: float
+    std_error: float
+    ci_low: float
+    ci_high: float
+    confidence: float
+    n_periods: int
+    slope: float
+    intercept: float
+
+    @property
+    def ci(self) -> tuple[float, float]:
+        """The confidence interval as a ``(low, high)`` tuple."""
+        return (self.ci_low, self.ci_high)
+
+    def factor(self, months: float) -> float:
+        """Trend factor over ``months`` at the fitted rate: ``(1 + annual_trend) ** (months / 12)``."""
+        return (1.0 + self.annual_trend) ** (months / 12.0)
+
+    def __repr__(self) -> str:
+        return (
+            f"TrendFit(annual_trend={self.annual_trend:.2%}, R2={self.r_squared:.3f}, "
+            f"{self.confidence:.0%} CI [{self.ci_low:.2%}, {self.ci_high:.2%}], n={self.n_periods})"
+        )
+
+
+def fit_trend(
+    df: pd.DataFrame,
+    *,
+    value_col: str,
+    date_col: str,
+    exposure_col: str | None = None,
+    freq: str = "M",
+    min_periods: int = 3,
+    confidence: float = 0.95,
+) -> TrendFit:
+    """Fit an exponential trend to a rate series by log-linear regression.
+
+    Aggregates ``df`` to the ``freq`` grain (summing ``value_col`` and, if given,
+    ``exposure_col``), forms the rate -- ``value / exposure`` (e.g. PMPM) when
+    ``exposure_col`` is supplied, otherwise ``value`` itself -- and fits
+    ``log(rate) = intercept + slope * t`` by ordinary least squares, with ``t`` in years
+    from the first period. The fitted annual trend is ``exp(slope) - 1``.
+
+    Unlike :func:`annualized_trend` (a two-point CAGR between a single current and prior
+    value), this uses every period, so one noisy month does not swing the estimate, and it
+    returns goodness of fit and a confidence interval -- what a *developed* (rather than
+    received) trend is judged on. It does not select the trend: the window, the rate basis
+    (allowed vs paid), any benefit leveraging, and the blend with external trends remain
+    judgment. Run it on completed, deseasonalized history (``complete -> deseasonalize ->
+    fit_trend``) so runout and seasonality do not contaminate the slope; apply the result
+    with :func:`trend_factor`/:meth:`TrendFit.factor` or :func:`adjust`.
+
+    Time is measured from actual period dates, so an occasional missing period is handled
+    correctly. Requires at least ``min_periods`` distinct periods with strictly positive
+    rates (non-positive values, which cannot be logged, raise). Returns a :class:`TrendFit`.
+    """
+    if not 0.0 < confidence < 1.0:
+        raise ValueError("confidence must be between 0 and 1.")
+    cols = [value_col, date_col] + ([exposure_col] if exposure_col else [])
+    validate_columns(df, cols)
+
+    period = pd.PeriodIndex(pd.to_datetime(df[date_col]), freq=freq)
+    work = pd.DataFrame({"_value": pd.to_numeric(df[value_col]).to_numpy()}, index=period)
+    if exposure_col:
+        work["_exposure"] = pd.to_numeric(df[exposure_col]).to_numpy()
+    grouped = work.groupby(level=0).sum().sort_index()
+
+    rate = grouped["_value"] / grouped["_exposure"] if exposure_col else grouped["_value"]
+    rate = rate.to_numpy(dtype="float64")
+    if len(rate) < max(min_periods, 3):
+        raise ValueError(f"fit_trend needs at least {max(min_periods, 3)} periods; got {len(rate)}.")
+    if np.any(rate <= 0):
+        raise ValueError("fit_trend requires strictly positive rates (cannot take the log of <= 0).")
+
+    timestamps = grouped.index.to_timestamp()
+    t = (timestamps - timestamps[0]).days.to_numpy(dtype="float64") / 365.25
+    if np.ptp(t) == 0:
+        raise ValueError("fit_trend needs at least two distinct periods.")
+    y = np.log(rate)
+    n = len(y)
+
+    t_mean, y_mean = t.mean(), y.mean()
+    sxx = float(np.sum((t - t_mean) ** 2))
+    sxy = float(np.sum((t - t_mean) * (y - y_mean)))
+    slope = sxy / sxx
+    intercept = y_mean - slope * t_mean
+
+    residuals = y - (intercept + slope * t)
+    sse = float(np.sum(residuals**2))
+    sst = float(np.sum((y - y_mean) ** 2))
+    # a flat series has no variance to explain (sst ~ 0 up to rounding); a constant fits it
+    # perfectly, so R^2 is 1.0 there rather than the unstable 0/0 of 1 - sse/sst.
+    r_squared = 1.0 if sst <= 1e-12 * max(1.0, abs(y_mean)) else 1.0 - sse / sst
+    resid_var = sse / (n - 2)
+    slope_se = float(np.sqrt(resid_var / sxx))
+
+    annual_trend = float(np.exp(slope) - 1.0)
+    std_error = float(np.exp(slope) * slope_se)  # delta method
+    t_crit = _student_t_ppf((1.0 + confidence) / 2.0, n - 2)
+    ci_low = float(np.exp(slope - t_crit * slope_se) - 1.0)
+    ci_high = float(np.exp(slope + t_crit * slope_se) - 1.0)
+
+    return TrendFit(
+        annual_trend=annual_trend, r_squared=r_squared, std_error=std_error,
+        ci_low=ci_low, ci_high=ci_high, confidence=confidence, n_periods=n,
+        slope=float(slope), intercept=float(intercept),
+    )

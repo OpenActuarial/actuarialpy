@@ -32,12 +32,22 @@ from actuarialpy.columns import as_list, grouped_factor_lookup, validate_columns
 
 
 def development_months(incurred_date, valuation_date):
-    """Whole months of development between incurred (origin) and valuation."""
+    """Whole months of development between incurred (origin) and valuation.
+
+    Either argument may be a scalar, a Series, or array-like, in any combination
+    (e.g. a column of incurred dates against a single valuation date). The result is
+    a Series when either argument is a Series, otherwise a scalar.
+    """
     incurred = pd.to_datetime(incurred_date)
     valuation = pd.to_datetime(valuation_date)
-    if hasattr(incurred, "dt"):
-        return (valuation.dt.year - incurred.dt.year) * 12 + (valuation.dt.month - incurred.dt.month)
-    return (valuation.year - incurred.year) * 12 + (valuation.month - incurred.month)
+
+    def year_month(value):
+        accessor = value.dt if hasattr(value, "dt") else value  # Series use .dt; Timestamp/Index don't
+        return accessor.year, accessor.month
+
+    incurred_year, incurred_month = year_month(incurred)
+    valuation_year, valuation_month = year_month(valuation)
+    return (valuation_year - incurred_year) * 12 + (valuation_month - incurred_month)
 
 
 # Backwards-compatible alias: "development" is the preferred cross-domain term.
@@ -237,6 +247,79 @@ def completion_factors(triangle: pd.DataFrame, *, method: str = "volume", tail: 
     return ChainLadder.fit(triangle, method=method, tail=tail).completion_factors
 
 
+def _emerged_factor(
+    df: pd.DataFrame,
+    factors: pd.Series | pd.DataFrame,
+    *,
+    date_col: str | None,
+    valuation_date: Any,
+    development_col: str | None,
+    by_cols: list[str],
+    factor_col: str,
+    development_name: str,
+) -> np.ndarray:
+    """Per-row completion factor (proportion emerged), with the join and tail rule.
+
+    Each row's development period is taken from ``development_col`` or computed as
+    ``development_months(date, valuation_date)``; the factor is then joined by value
+    (flat Series or per-segment table) exactly as in :func:`apply_completion`. A row past
+    its (group's) last development period is fully emerged (``1.0``); an interior gap or
+    absent group stays ``NaN``; a negative development period raises.
+    """
+    if development_col is not None:
+        development = pd.to_numeric(df[development_col]).to_numpy()
+    else:
+        valuation = pd.Series(pd.to_datetime(valuation_date), index=df.index)
+        development = development_months(df[date_col], valuation).to_numpy()
+    if (development < 0).any():
+        raise ValueError("Negative development period: some rows have an incurred date after valuation_date.")
+
+    if isinstance(factors, pd.DataFrame):
+        factor = grouped_factor_lookup(
+            df, factors, by_cols, development, key_col=development_name, factor_col=factor_col
+        )
+        by_key = by_cols[0] if len(by_cols) == 1 else by_cols
+        group_max = factors.groupby(by_key)[development_name].max()
+        if len(by_cols) == 1:
+            row_max = group_max.reindex(df[by_cols[0]].to_numpy()).to_numpy()
+        else:
+            row_max = group_max.reindex(pd.MultiIndex.from_frame(df[by_cols].reset_index(drop=True))).to_numpy()
+        beyond = np.isnan(factor) & (development > row_max)  # absent group -> row_max NaN -> stays NaN
+        factor[beyond] = 1.0
+    else:
+        max_development = int(pd.Index(factors.index).max())
+        factor = np.array(pd.Series(development).map(factors), dtype="float64")  # NaN where absent
+        factor[development > max_development] = 1.0  # beyond the fitted triangle -> complete
+    return factor
+
+
+def _cape_cod_elr(
+    paid: np.ndarray, exposure: np.ndarray, emerged: np.ndarray, df: pd.DataFrame, by_cols: list[str]
+) -> np.ndarray:
+    """Cape Cod expected loss ratio = sum(paid) / sum(exposure * emerged), per segment.
+
+    The Stanard-Buhlmann "used-up premium" ELR: a single loss ratio per ``by`` segment
+    (or one overall) derived from the data, broadcast back to each row. Rows whose factor
+    is ``NaN`` are excluded from the ratio (and stay ``NaN`` in the result).
+    """
+    used = exposure * emerged
+    valid = ~np.isnan(used)
+    frame = pd.DataFrame({
+        "_paid": np.where(valid, paid, np.nan),
+        "_used": np.where(valid, used, np.nan),
+    })
+    if not by_cols:
+        return np.full(len(paid), np.nansum(frame["_paid"].to_numpy()) / np.nansum(frame["_used"].to_numpy()))
+    for col in by_cols:
+        frame[col] = df[col].to_numpy()
+    grouped = frame.groupby(by_cols, dropna=False)
+    elr_by_group = grouped["_paid"].sum(min_count=1) / grouped["_used"].sum(min_count=1)
+    if len(by_cols) == 1:
+        return df[by_cols[0]].map(elr_by_group).to_numpy(dtype="float64")
+    keys = pd.MultiIndex.from_frame(df[by_cols].reset_index(drop=True))
+    return np.array(elr_by_group.reindex(keys), dtype="float64")
+
+
 def apply_completion(
     df: pd.DataFrame,
     factors: pd.Series | pd.DataFrame,
@@ -285,33 +368,99 @@ def apply_completion(
     validate_columns(df, needed)
     result = df.copy() if copy else df
 
-    if development_col is not None:
-        development = pd.to_numeric(result[development_col]).to_numpy()
-    else:
-        valuation = pd.Series(pd.to_datetime(valuation_date), index=result.index)
-        development = development_months(result[date_col], valuation).to_numpy()
-    if (development < 0).any():
-        raise ValueError("Negative development period: some rows have an incurred date after valuation_date.")
-
-    if isinstance(factors, pd.DataFrame):
-        factor = grouped_factor_lookup(
-            result, factors, by_cols, development, key_col=development_name, factor_col=factor_col
-        )
-        # rows past their own group's last development period are fully complete
-        by_key = by_cols[0] if len(by_cols) == 1 else by_cols
-        group_max = factors.groupby(by_key)[development_name].max()
-        if len(by_cols) == 1:
-            row_max = group_max.reindex(result[by_cols[0]].to_numpy()).to_numpy()
-        else:
-            row_max = group_max.reindex(pd.MultiIndex.from_frame(result[by_cols].reset_index(drop=True))).to_numpy()
-        beyond = np.isnan(factor) & (development > row_max)  # absent group -> row_max NaN -> stays NaN
-        factor[beyond] = 1.0
-    else:
-        max_development = int(pd.Index(factors.index).max())
-        factor = np.array(pd.Series(development).map(factors), dtype="float64")  # NaN where absent
-        factor[development > max_development] = 1.0  # beyond the fitted triangle -> complete
-
+    factor = _emerged_factor(
+        result, factors, date_col=date_col, valuation_date=valuation_date, development_col=development_col,
+        by_cols=by_cols, factor_col=factor_col, development_name=development_name,
+    )
     result[out_col or f"{value_col}_completed"] = result[value_col].to_numpy() / factor
+    return result
+
+
+def develop_ultimate(
+    df: pd.DataFrame,
+    factors: pd.Series | pd.DataFrame,
+    *,
+    method: str = "bornhuetter_ferguson",
+    value_col: str,
+    date_col: str | None = None,
+    valuation_date: Any = None,
+    development_col: str | None = None,
+    apriori_col: str | None = None,
+    exposure_col: str | None = None,
+    by: str | list[str] | None = None,
+    factor_col: str = "completion_factor",
+    development_name: str = "development_month",
+    out_col: str | None = None,
+    copy: bool = True,
+) -> pd.DataFrame:
+    """Develop a paid amount to estimated ultimate by a chosen reserving method.
+
+    All methods share one input -- the proportion emerged at each row's development
+    period, joined exactly as :func:`apply_completion` does (flat Series or per-segment
+    table, beyond-the-triangle rows fully emerged). They differ only in how they combine
+    that with the paid-to-date and an *a priori* expectation:
+
+    - ``"chain_ladder"`` -- ``paid / emerged``. Ignores the a priori; equivalent to
+      :func:`apply_completion`. Volatile for immature periods (a thin latest diagonal
+      drives the whole tail).
+    - ``"bornhuetter_ferguson"`` -- ``paid + apriori * (1 - emerged)``. Takes the
+      unemerged portion from the a priori rather than from the data, so it is stable for
+      green periods. Requires ``apriori_col`` (an expected ultimate per row -- an input,
+      e.g. a plan, budget, or manual times exposure).
+    - ``"benktander"`` -- one Bornhuetter-Ferguson iteration using the BF ultimate as the
+      a priori: ``paid + bf * (1 - emerged)``. A credibility blend sitting between BF and
+      chain ladder (weight ``emerged`` on chain ladder). Requires ``apriori_col``.
+    - ``"cape_cod"`` -- Bornhuetter-Ferguson with the a priori derived from the data: a
+      single expected loss ratio per segment, ``sum(paid) / sum(exposure * emerged)``,
+      times each row's exposure. Requires ``exposure_col`` (an on-level premium /
+      exposure per row). The loss ratio is mechanical; the exposure base is an input.
+
+    The library applies a method; it does not pick the a priori or the exposure base.
+    Supply either ``development_col`` or both ``date_col`` and ``valuation_date``; pass
+    ``by`` with a per-segment factor table (and Cape Cod then derives one loss ratio per
+    segment). Returns ``df`` with an ``out_col`` (default ``f"{value_col}_ultimate"``).
+    """
+    methods = {"chain_ladder", "bornhuetter_ferguson", "benktander", "cape_cod"}
+    if method not in methods:
+        raise ValueError(f"method must be one of {sorted(methods)}; got {method!r}.")
+    if development_col is None and (date_col is None or valuation_date is None):
+        raise ValueError(
+            "Provide development_col, or both date_col and valuation_date, to determine each row's development period."
+        )
+    by_cols = as_list(by)
+    needed = [value_col] + ([development_col] if development_col is not None else [date_col]) + by_cols
+    if method in ("bornhuetter_ferguson", "benktander"):
+        if apriori_col is None:
+            raise ValueError(f"method={method!r} requires apriori_col (an expected ultimate per row).")
+        needed.append(apriori_col)
+    if method == "cape_cod":
+        if exposure_col is None:
+            raise ValueError("method='cape_cod' requires exposure_col (an on-level premium / exposure per row).")
+        needed.append(exposure_col)
+    validate_columns(df, needed)
+    result = df.copy() if copy else df
+
+    emerged = _emerged_factor(
+        result, factors, date_col=date_col, valuation_date=valuation_date, development_col=development_col,
+        by_cols=by_cols, factor_col=factor_col, development_name=development_name,
+    )
+    paid = result[value_col].to_numpy(dtype="float64")
+
+    if method == "chain_ladder":
+        ultimate = paid / emerged
+    elif method == "bornhuetter_ferguson":
+        apriori = result[apriori_col].to_numpy(dtype="float64")
+        ultimate = paid + apriori * (1.0 - emerged)
+    elif method == "benktander":
+        apriori = result[apriori_col].to_numpy(dtype="float64")
+        bf = paid + apriori * (1.0 - emerged)
+        ultimate = paid + bf * (1.0 - emerged)
+    else:  # cape_cod
+        exposure = result[exposure_col].to_numpy(dtype="float64")
+        elr = _cape_cod_elr(paid, exposure, emerged, result, by_cols)
+        ultimate = paid + exposure * elr * (1.0 - emerged)
+
+    result[out_col or f"{value_col}_ultimate"] = ultimate
     return result
 
 

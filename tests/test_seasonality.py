@@ -246,7 +246,7 @@ def test_experience_deseasonalize_requires_date():
 
 # --- grouped (per-segment) seasonality via by= -----------------------------
 
-from actuarialpy import seasonality_factors_by, apply_seasonality  # noqa: E402
+from actuarialpy import seasonality_factors_by  # noqa: E402
 
 _SHAPES = {
     "A": np.array([1.25, 1.15, 1.05, 0.97, 0.93, 0.88, 0.86, 0.89, 0.96, 1.02, 1.06, 1.18]),
