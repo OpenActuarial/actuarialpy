@@ -13,7 +13,8 @@ def _book(as_of="2026-06-01", joins=None):
         for m in pd.date_range(start, as_of, freq="MS"):
             rows.append(dict(group=g, eff=start, month=m, claims=100, premium=120, member_months=500))
     df = pd.DataFrame(rows)
-    df["eff"] = pd.to_datetime(df["eff"]); df["month"] = pd.to_datetime(df["month"])
+    df["eff"] = pd.to_datetime(df["eff"])
+    df["month"] = pd.to_datetime(df["month"])
     return df
 
 

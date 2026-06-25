@@ -2,7 +2,6 @@
 
 import numpy as np
 import pandas as pd
-import pytest
 
 from actuarialpy.forecast import compare_actual_to_expected
 

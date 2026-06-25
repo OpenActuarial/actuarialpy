@@ -124,6 +124,12 @@ def _decompose_pmpm_trend_mix(
 ) -> pd.DataFrame:
     """Three-way (utilization x unit cost x mix) PMPM decomposition via LMDI."""
     mix_keys = as_list(mix_by)
+    overlap = [k for k in mix_keys if k in on]
+    if overlap:
+        raise ValueError(
+            f"on and mix_by must be distinct dimensions; shared column(s): {overlap}. "
+            "Mix is undefined when the mix dimension is also a reporting group."
+        )
     cell_keys = on + mix_keys
     cols = [count_col, loss_col, exposure_col]
     validate_columns(prior, cell_keys + cols)

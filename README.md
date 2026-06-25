@@ -109,6 +109,7 @@ exp = ap.Experience(
     revenue="premium",           # the premium / revenue column(s)
     exposure="member_months",    # the exposure column(s)
     date="incurred_month",       # the time column
+    count="claim_count",         # a claim/service count -> frequency-severity views
     profile="health",            # naming profile (health -> MLR, PMPM terminology)
 )
 ```
@@ -128,6 +129,11 @@ trend = exp.trend(
     current_start="2026-01-01", current_end="2026-12-31",
     groupby="product_code",
 )
+
+# frequency / severity / PMPM, and the PMPM trend split into utilization x unit cost x mix
+fs = exp.frequency_severity(groupby="product_code")
+drivers = exp.decompose_trend(period_col="year", prior_period=2025, current_period=2026, mix_by="segment")
+slope = exp.fit_trend()        # log-linear PMPM trend with goodness of fit (developed, not received)
 
 # several named cuts at once
 views = exp.views({"overall": None, "by_group": "group_id", "by_product": "product_code"})
@@ -530,6 +536,10 @@ once per dimension). `on` and `mix_by` are orthogonal: `on` groups the output ro
 `mix_by` defines the mix cells within each group. Every cell must have positive count,
 loss, and exposure in both periods. See
 [`examples/trend_decomposition.py`](examples/trend_decomposition.py).
+
+On an `Experience`, the same split is `exp.decompose_trend(...)`: it uses the bound
+`count`, `expense` (as the loss), and `exposure` roles and slices prior/current by period
+or date range exactly like `exp.trend`, so you specify the columns once.
 
 ## Seasonality and working-day adjustment
 

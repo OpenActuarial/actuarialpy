@@ -21,7 +21,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import pandas as pd  # noqa: E402
 
-from actuarialpy import decompose_pmpm_trend  # noqa: E402
+from actuarialpy import Experience, decompose_pmpm_trend  # noqa: E402
 from _sample_data import sample_trend_cells  # noqa: E402
 
 
@@ -75,6 +75,17 @@ def main() -> None:
     with pd.option_context("display.float_format", lambda v: f"{v:.4f}"):
         print(out[["region", "pmpm_trend", "util_trend", "cost_trend", "mix_trend"]].to_string(index=False))
     print("  on= groups the output rows; mix_by= defines the mix cells within each group.")
+
+    section("Same split on an Experience (columns bound once)")
+    exp = Experience(panel, expense="allowed", revenue="premium",
+                     exposure="member_months", count="claim_count")
+    fac = exp.decompose_trend(
+        period_col="period", prior_period="2024", current_period="2025", mix_by="segment",
+    ).iloc[0]
+    print(f"  exp.decompose_trend(period_col='period', ...) -> util {pct(fac['util_trend'])}  "
+          f"cost {pct(fac['cost_trend'])}  mix {pct(fac['mix_trend'])}")
+    print("  Identical to mix_by='segment' above -- but the Experience holds count/loss/exposure,")
+    print("  so you bind the columns once and the period split works like exp.trend.")
 
 
 if __name__ == "__main__":

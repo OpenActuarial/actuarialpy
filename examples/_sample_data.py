@@ -194,7 +194,7 @@ def sample_trend_cells() -> pd.DataFrame:
     within-cell trends are obvious); meanwhile enrollment shifts toward the High
     segment, so the book-wide two-way overstates utilization and unit cost while the
     mix term recovers the difference. Columns: ``period``, ``segment``, ``region``,
-    ``member_months``, ``claim_count``, ``allowed``.
+    ``member_months``, ``claim_count``, ``allowed``, ``premium``.
     """
     prior = {                                  # (segment, region): (member_months, utilization, unit_cost)
         ("Low", "North"): (40000, 0.45, 420.0),
@@ -211,10 +211,12 @@ def sample_trend_cells() -> pd.DataFrame:
     util_trend, cost_trend = 1.03, 1.04        # uniform within every cell
     rows: list[dict] = []
     for (seg, reg), (mm0, u0, c0) in prior.items():
+        allowed0 = c0 * u0 * mm0
         rows.append({"period": "2024", "segment": seg, "region": reg, "member_months": float(mm0),
-                     "claim_count": u0 * mm0, "allowed": c0 * u0 * mm0})
+                     "claim_count": u0 * mm0, "allowed": allowed0, "premium": 1.18 * allowed0})
         mm1 = current_mm[(seg, reg)]
         u1, c1 = u0 * util_trend, c0 * cost_trend
+        allowed1 = c1 * u1 * mm1
         rows.append({"period": "2025", "segment": seg, "region": reg, "member_months": float(mm1),
-                     "claim_count": u1 * mm1, "allowed": c1 * u1 * mm1})
+                     "claim_count": u1 * mm1, "allowed": allowed1, "premium": 1.18 * allowed1})
     return pd.DataFrame(rows)

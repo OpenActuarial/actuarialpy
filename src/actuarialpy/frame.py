@@ -15,6 +15,7 @@ from actuarialpy.cohorts import cohort_summary, duration_summary
 from actuarialpy.columns import as_list, sum_columns, validate_columns
 from actuarialpy.components import component_driver_analysis, summarize_components
 from actuarialpy.credibility import credibility_weighted_estimate
+from actuarialpy.decomposition import decompose_pmpm_trend, frequency_severity_summary
 from actuarialpy.expected import summarize_actual_vs_expected
 from actuarialpy.experience import status_summary, summarize_experience, summarize_views
 from actuarialpy.lifecycle import derive_status
@@ -24,7 +25,7 @@ from actuarialpy.adjustments import adjust as _adjust
 from actuarialpy.reserving import apply_completion as _apply_completion
 from actuarialpy.rolling import rolling_summary
 from actuarialpy.seasonality import deseasonalize as _deseasonalize
-from actuarialpy.trend import trend_summary
+from actuarialpy.trend import TrendFit, _comparison_masks, fit_trend as _fit_trend, trend_summary
 
 _ID_LIKE_EXPOSURE_NAMES = {"member_id", "subscriber_id", "group_id", "employee_id", "policy_id", "claim_id"}
 
@@ -53,6 +54,10 @@ class Experience:
     the package's free functions. The object is immutable: methods return
     DataFrames or new ``Experience`` objects rather than changing stored data in
     place.
+
+    Bind ``count`` (a claim or service count) to unlock the frequency-severity views:
+    :meth:`frequency_severity` and :meth:`decompose_trend` (utilization x unit cost,
+    optionally x mix). :meth:`fit_trend` regresses a developed trend on the bound history.
     """
 
     data: pd.DataFrame
@@ -61,6 +66,7 @@ class Experience:
     exposure: str | list[str] | None = None
     date: str | None = None
     profile: str | None = None
+    count: str | None = None
     copy: bool = False
 
     def __post_init__(self) -> None:
@@ -73,11 +79,15 @@ class Experience:
         required = as_list(self.expense) + as_list(self.revenue) + as_list(self.exposure)
         if self.date is not None:
             required.append(self.date)
+        if self.count is not None:
+            required.append(self.count)
         validate_columns(self.data, required)
         _validate_exposure_names(as_list(self.exposure))
         _validate_numeric_columns(self.data, as_list(self.expense), role="Expense")
         _validate_numeric_columns(self.data, as_list(self.revenue), role="Revenue")
         _validate_numeric_columns(self.data, as_list(self.exposure), role="Exposure")
+        if self.count is not None:
+            _validate_numeric_columns(self.data, [self.count], role="Count")
 
     def with_roles(
         self,
@@ -88,6 +98,7 @@ class Experience:
         exposure: str | list[str] | None = None,
         date: str | None = None,
         profile: str | None = None,
+        count: str | None = None,
         copy: bool | None = None,
     ) -> "Experience":
         """Return a new ``Experience`` object with updated data or roles."""
@@ -99,6 +110,7 @@ class Experience:
             exposure=self.exposure if exposure is None else exposure,
             date=self.date if date is None else date,
             profile=self.profile if profile is None else profile,
+            count=self.count if count is None else count,
             copy=self.copy if copy is None else copy,
         )
 
@@ -334,6 +346,119 @@ class Experience:
             groupby=groupby,
             date_col=resolved_date,
             **kwargs,
+        )
+
+    def frequency_severity(
+        self,
+        *,
+        count_col: str | None = None,
+        loss_col: str | None = None,
+        exposure_col: str | None = None,
+        groupby: str | list[str] | None = None,
+        annualization: float = 12,
+    ) -> pd.DataFrame:
+        """Per-group claim frequency, severity, and PMPM (see ``frequency_severity_summary``).
+
+        Uses the bound ``count``, ``expense`` (as the loss), and ``exposure`` roles, so the
+        columns are specified once on the object. The identity ``pmpm == frequency *
+        severity`` holds for every row.
+        """
+        data, resolved_loss = self._data_with_amount(loss_col)
+        return frequency_severity_summary(
+            data,
+            count_col=self._resolve_count(count_col),
+            loss_col=resolved_loss,
+            exposure_col=self._resolve_exposure(exposure_col),
+            groupby=groupby,
+            annualization=annualization,
+        )
+
+    def decompose_trend(
+        self,
+        *,
+        count_col: str | None = None,
+        loss_col: str | None = None,
+        exposure_col: str | None = None,
+        mix_by: str | Iterable[str] | None = None,
+        groupby: str | list[str] | None = None,
+        period_col: str | None = None,
+        prior_period: Any = None,
+        current_period: Any = None,
+        date_col: str | None = None,
+        prior_start: Any = None,
+        prior_end: Any = None,
+        current_start: Any = None,
+        current_end: Any = None,
+        prior_filter: Any = None,
+        current_filter: Any = None,
+        annualization: float = 12,
+    ) -> pd.DataFrame:
+        """Decompose the PMPM trend between two periods of the bound data.
+
+        Splits the bound frame into prior and current with the same comparison modes as
+        :meth:`trend` -- ``period_col`` with ``prior_period`` / ``current_period``, a
+        ``date_col`` with prior/current ranges (the bound ``date`` is used when no
+        ``date_col`` is passed), or explicit ``prior_filter`` / ``current_filter`` masks --
+        then decomposes the change via :func:`decompose_pmpm_trend`, using the bound
+        ``count``, ``expense`` (as the loss), and ``exposure`` roles. Pass ``mix_by`` to add
+        the third LMDI mix term; ``groupby`` reports one decomposition per group.
+        """
+        resolved_count = self._resolve_count(count_col)
+        resolved_exposure = self._resolve_exposure(exposure_col)
+        data, resolved_loss = self._data_with_amount(loss_col)
+        date_mode = any(v is not None for v in (date_col, prior_start, prior_end, current_start, current_end))
+        resolved_date = (date_col if date_col is not None else self.date) if date_mode else None
+        prior_mask, current_mask, _ = _comparison_masks(
+            data,
+            period_col=period_col,
+            prior_period=prior_period,
+            current_period=current_period,
+            date_col=resolved_date,
+            prior_start=prior_start,
+            prior_end=prior_end,
+            current_start=current_start,
+            current_end=current_end,
+            prior_filter=prior_filter,
+            current_filter=current_filter,
+        )
+        return decompose_pmpm_trend(
+            data.loc[prior_mask],
+            data.loc[current_mask],
+            count_col=resolved_count,
+            loss_col=resolved_loss,
+            exposure_col=resolved_exposure,
+            on=groupby,
+            mix_by=mix_by,
+            annualization=annualization,
+        )
+
+    def fit_trend(
+        self,
+        *,
+        value_col: str | None = None,
+        exposure_col: str | None = None,
+        date_col: str | None = None,
+        freq: str = "M",
+        min_periods: int = 3,
+        confidence: float = 0.95,
+    ) -> TrendFit:
+        """Fit an exponential trend to the bound experience by log-linear regression.
+
+        Defaults to the bound ``expense`` (claims) over the bound ``exposure`` -- the PMPM
+        trend -- across the bound ``date``; pass ``value_col`` / ``exposure_col`` to
+        override, or leave the exposure unbound to trend the raw amount. Returns a
+        ``TrendFit`` (see :func:`fit_trend`). Run on completed, deseasonalized history.
+        """
+        data, resolved_value = self._data_with_amount(value_col)
+        resolved_exposure = exposure_col if exposure_col is not None else self._single_exposure_or_none()
+        return _fit_trend(
+            data,
+            value_col=resolved_value,
+            date_col=self._resolve_date_col(date_col),
+            exposure_col=resolved_exposure,
+            freq=freq,
+            min_periods=min_periods,
+            confidence=confidence,
         )
 
     def components(
@@ -648,6 +773,27 @@ class Experience:
         resolved = date_col or self.date
         if resolved is None:
             raise ValueError("A date column is required. Pass date=... to Experience or date_col=... to this method.")
+        return resolved
+
+    def _resolve_count(self, count_col: str | None) -> str:
+        resolved = count_col or self.count
+        if resolved is None:
+            raise ValueError(
+                "A count column is required. Pass count=... to Experience or count_col=... to this method."
+            )
+        validate_columns(self.data, [resolved])
+        return resolved
+
+    def _resolve_exposure(self, exposure_col: str | None) -> str:
+        if exposure_col is not None:
+            validate_columns(self.data, [exposure_col])
+            return exposure_col
+        resolved = self._single_exposure_or_none()
+        if resolved is None:
+            raise ValueError(
+                "An exposure column is required for this method. Pass exposure=... to Experience "
+                "or exposure_col=... to this method."
+            )
         return resolved
 
     def _single_exposure_or_none(self) -> str | None:

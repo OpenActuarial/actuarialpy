@@ -1,5 +1,46 @@
 # Changelog
 
+## 0.28.0
+
+Wires the frequency-severity family into the `Experience` facade so columns are bound
+once, closing a consistency gap: `frequency_severity_summary`, `decompose_pmpm_trend`,
+and `fit_trend` were free functions with no facade method because `Experience` had no
+count role. `Experience` now binds an optional `count`, and three methods delegate to
+those functions using the bound roles. The free functions are unchanged.
+
+### Added
+
+- `count` role on `Experience` (optional, a single claim/service count column), validated
+  numeric like the other roles and preserved across `filter` / `with_roles`.
+- `Experience.frequency_severity(...)` -> `frequency_severity_summary` using the bound
+  count, expense (as the loss), and exposure.
+- `Experience.decompose_trend(...)` -> `decompose_pmpm_trend`. Splits the bound frame into
+  prior/current with the same comparison modes as `Experience.trend` (period_col +
+  prior/current_period, a date_col with ranges, or explicit filters; the bound `date` is
+  used when no date_col is passed), then decomposes utilization x unit cost, with `mix_by`
+  for the third LMDI mix term and `groupby` for per-group rows.
+- `Experience.fit_trend(...)` -> `fit_trend`, defaulting to the bound expense over the
+  bound exposure (PMPM trend) across the bound date; returns a `TrendFit`.
+
+### Changed
+
+- `decompose_pmpm_trend` now raises a clear `ValueError` when `on` and `mix_by` share a
+  column (mix is undefined when the mix dimension is also a reporting group), instead of a
+  cryptic pandas grouper error.
+
+### Examples
+
+- `trend_decomposition.py` gains an `Experience.decompose_trend` section showing it
+  reproduces the free-function split with columns bound once; `sample_trend_cells()` gains
+  a `premium` column so the facade (which binds a revenue role) is clean.
+
+### Tests
+
+- New `test_experience_count_methods.py` (11 tests): count-role validation, each facade
+  method equals its free function (period mode, bound-date ranges, mix_by, groupby), the
+  unbound-count and overlapping-on/mix_by errors, and role persistence through `filter` /
+  `with_roles`. Full suite: 257 passing.
+
 ## 0.27.0
 
 Extends `decompose_pmpm_trend` with an optional `mix_by`, adding a third **mix**

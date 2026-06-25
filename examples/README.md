@@ -24,7 +24,7 @@ change. The others each focus on one surface.
 | `seasonality.py` | seasonality | `business_days_in_period`, `seasonality_factors` → `deseasonalize`, plus per-line `seasonality_factors_by` + grouped `deseasonalize(by=)` |
 | `restatement.py` | adjustments | `Experience.adjust` chain — scalar trend, per-region and per-line relativities, with a cumulative `audit_col` |
 | `trend_and_forecast.py` | trend | `trend_summary`, `annualized_trend`, `project_forward`, `trend_factor`, and `fit_trend` (log-linear trend with diagnostics, fit on deseasonalized history) |
-| `trend_decomposition.py` | decomposition | `decompose_pmpm_trend` two-way (utilization × unit cost), and the three-way `mix_by=` split — adds a mix term via LMDI, reconciling exactly; single dimension, the cross of two, and `on=` + `mix_by=` together |
+| `trend_decomposition.py` | decomposition | `decompose_pmpm_trend` two-way (utilization × unit cost), and the three-way `mix_by=` split — adds a mix term via LMDI, reconciling exactly; single dimension, the cross of two, and `on=` + `mix_by=` together; plus the `Experience.decompose_trend` facade method (same split with columns bound once) |
 | `credibility.py` | credibility | `credibility_weighted_estimate`, `Experience.credibility_weighted` |
 | `lifecycle_and_banding.py` | lifecycle, banding | `derive_status`, `Experience.by_status`, `Experience.by_band` |
 
@@ -48,7 +48,9 @@ change. The others each focus on one surface.
   split into morbidity-segment × region cells, with uniform within-cell utilization
   (+3%) and unit-cost (+4%) trend and an enrollment shift toward the High segment, so
   the book-wide two-way overstates both drivers and the mix term recovers the
-  difference; used by the trend-decomposition example.
+  difference; carries `claim_count`, `allowed`, and `premium` so it drives both the
+  free `decompose_pmpm_trend` and the `Experience.decompose_trend` facade method in the
+  trend-decomposition example.
 
 ## Note
 
