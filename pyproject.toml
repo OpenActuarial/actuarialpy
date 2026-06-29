@@ -36,9 +36,10 @@ excel = ["openpyxl>=3.1"]
 dev = ["pytest>=7", "hypothesis>=6", "build>=1", "twine>=5"]
 
 [project.urls]
-Homepage = "https://github.com/openactuarial/actuarialpy"
-Repository = "https://github.com/openactuarial/actuarialpy"
-Issues = "https://github.com/openactuarial/actuarialpy/issues"
+Homepage = "https://github.com/OpenActuarial/actuarialpy/"
+Repository = "https://github.com/OpenActuarial/actuarialpy/"
+Documentation = "https://openactuarial.github.io/docs/actuarialpy/"
+Issues = "https://github.com/OpenActuarial/actuarialpy/issues/"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/actuarialpy"]
