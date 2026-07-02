@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.34.0
+
+### Changed
+- `safe_divide` and `combined_ratio` preserve pandas inputs: Series in,
+  Series out (index and name retained), instead of coercing to bare numpy
+  arrays.
+- Grouped operations (claimants, decomposition, reserving, seasonality,
+  exposure, credibility internals) zip keys and columns strictly, surfacing
+  length mismatches instead of silently truncating.
+
 ## 0.31.0
 
 ### Added

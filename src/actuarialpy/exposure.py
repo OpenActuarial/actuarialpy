@@ -12,7 +12,6 @@ exposure-year / age-basis machinery used in mortality and lapse studies.
 """
 from __future__ import annotations
 
-import numpy as np
 import pandas as pd
 
 from actuarialpy.financial import year_fraction
@@ -118,7 +117,7 @@ def add_exposure_column(
         # fall back to per-row exact calculation for non-actual/fixed conventions
         result[exposure_col] = [
             exposure_years(e, x, ss, se, convention=convention)
-            for e, x in zip(result[entry_col], result[exit_col])
+            for e, x in zip(result[entry_col], result[exit_col], strict=True)
         ]
         return result
     result[exposure_col] = days / denom

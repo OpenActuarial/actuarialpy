@@ -173,7 +173,7 @@ class ChainLadder:
 
         # age-to-age (link) factors between each pair of adjacent development periods
         ratios: dict[object, float] = {}
-        for start, end in zip(cols[:-1], cols[1:]):
+        for start, end in zip(cols[:-1], cols[1:], strict=True):
             pair = tri[[start, end]].dropna()
             if pair.empty:
                 raise ValueError(f"no overlapping origins to estimate the {start}->{end} development factor")
@@ -588,7 +588,7 @@ def completion_factors_by(
     records: list[dict[str, Any]] = []
     for key, fitted in patterns.items():
         key_tuple = key if isinstance(key, tuple) else (key,)
-        key_map = dict(zip(group_cols, key_tuple))
+        key_map = dict(zip(group_cols, key_tuple, strict=True))
         for development, factor in fitted.completion_factors.items():
             records.append({**key_map, development_name: development, "completion_factor": float(factor)})
     if not records:

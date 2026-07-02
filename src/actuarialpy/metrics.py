@@ -5,16 +5,33 @@ from __future__ import annotations
 from typing import Any
 
 import numpy as np
+import pandas as pd
+
+
+def _is_pandas(obj: Any) -> bool:
+    return isinstance(obj, (pd.Series, pd.DataFrame))
 
 
 def safe_divide(numerator: Any, denominator: Any, *, fill_value: float = np.nan) -> Any:
     """Safely divide numerator by denominator.
 
-    Scalars return scalars. Array-like inputs return NumPy arrays. Zero denominators
-    are returned as ``fill_value``.
+    The return type mirrors the input: scalars return scalars, array-likes
+    return NumPy arrays, and pandas inputs return pandas objects with their
+    index (and name) preserved -- so results can be assigned straight back
+    onto the source DataFrame. Zero denominators are returned as
+    ``fill_value``.
     """
     if isinstance(numerator, (int, float, np.number)) and isinstance(denominator, (int, float, np.number)):
         return fill_value if denominator == 0 else numerator / denominator
+
+    if _is_pandas(numerator) or _is_pandas(denominator):
+        with np.errstate(divide="ignore", invalid="ignore"):
+            out = numerator / denominator
+        if _is_pandas(denominator):
+            zero_mask = denominator.eq(0).reindex_like(out).fillna(False)
+        else:
+            zero_mask = np.broadcast_to(np.asarray(denominator) == 0, np.shape(out))
+        return out.mask(zero_mask, fill_value)
 
     numerator_arr = np.asarray(numerator, dtype=float)
     denominator_arr = np.asarray(denominator, dtype=float)
@@ -49,6 +66,8 @@ def expense_ratio(expenses: Any, revenue: Any) -> Any:
 
 def combined_ratio(losses: Any, expenses: Any, revenue: Any) -> Any:
     """Calculate combined ratio: (losses + expenses) divided by revenue."""
+    if _is_pandas(losses) or _is_pandas(expenses):
+        return ratio(losses + expenses, revenue)
     return ratio(np.asarray(losses) + np.asarray(expenses), revenue)
 
 

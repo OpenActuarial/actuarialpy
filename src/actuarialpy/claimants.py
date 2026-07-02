@@ -156,6 +156,6 @@ def claim_concentration(
         for keys, part in df.groupby(groups, dropna=False, sort=False):
             if not isinstance(keys, tuple):
                 keys = (keys,)
-            rows.append({**dict(zip(groups, keys)), **summarize(part)})
+            rows.append({**dict(zip(groups, keys, strict=True)), **summarize(part)})
         return pd.DataFrame(rows)
     return pd.DataFrame([summarize(df)])

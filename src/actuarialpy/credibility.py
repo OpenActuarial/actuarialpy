@@ -273,7 +273,7 @@ class BuhlmannStraub:
                 raise ValueError("data and weights must have the same number of risks.")
             if len(obs) < 2:
                 raise ValueError("data must contain at least two risks.")
-            for x, w in zip(obs, wts):
+            for x, w in zip(obs, wts, strict=True):
                 if x.ndim != 1 or w.ndim != 1:
                     raise ValueError("each risk's data and weights must be 1D.")
                 if x.shape != w.shape:
@@ -308,13 +308,13 @@ class BuhlmannStraub:
             raise ValueError("need at least two risks.")
         m_i = np.array([float(w.sum()) for w in risk_wts])
         xbar_i = np.array(
-            [float(np.sum(w * x) / w.sum()) for x, w in zip(risk_obs, risk_wts)]
+            [float(np.sum(w * x) / w.sum()) for x, w in zip(risk_obs, risk_wts, strict=True)]
         )
         m = float(m_i.sum())
         overall_mean = float(np.sum(m_i * xbar_i) / m)
 
         ss_within = float(
-            sum(np.sum(w * (x - xb) ** 2) for x, w, xb in zip(risk_obs, risk_wts, xbar_i))
+            sum(np.sum(w * (x - xb) ** 2) for x, w, xb in zip(risk_obs, risk_wts, xbar_i, strict=True))
         )
         dof = int(sum(len(x) - 1 for x in risk_obs))
         if dof <= 0:

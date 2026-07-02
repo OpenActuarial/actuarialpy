@@ -171,7 +171,7 @@ def _decompose_pmpm_trend_mix(
     if on:
         for group_vals, sub in merged.groupby(on, dropna=False, sort=False):
             group_vals = group_vals if isinstance(group_vals, tuple) else (group_vals,)
-            records.append({**dict(zip(on, group_vals)), **_group_record(sub)})
+            records.append({**dict(zip(on, group_vals, strict=True)), **_group_record(sub)})
     else:
         records.append(_group_record(merged))
 

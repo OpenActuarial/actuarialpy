@@ -304,7 +304,7 @@ def seasonality_factors_by(
     records: list[dict[str, Any]] = []
     for key, part in df.groupby(by_key, sort=True):
         key_tuple = key if isinstance(key, tuple) else (key,)
-        key_map = dict(zip(group_cols, key_tuple))
+        key_map = dict(zip(group_cols, key_tuple, strict=True))
         with warnings.catch_warnings():
             if not warn:
                 warnings.simplefilter("ignore", InsufficientDataWarning)
