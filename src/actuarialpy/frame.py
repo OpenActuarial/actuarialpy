@@ -56,7 +56,7 @@ class Experience:
     place.
 
     Bind ``count`` (a claim or service count) to unlock the frequency-severity views:
-    :meth:`frequency_severity` and :meth:`decompose_trend` (utilization x unit cost,
+    :meth:`frequency_severity` and :meth:`decompose_trend` (frequency x severity,
     optionally x mix). :meth:`fit_trend` regresses a developed trend on the bound history.
 
     **Grain matters.** ``Experience`` aggregates by *summing* the bound columns, so it

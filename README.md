@@ -1,7 +1,7 @@
 # actuarialpy
 
 Standard actuarial analyses on claims, eligibility, and premium data: loss ratios and PMPM,
-development triangles and IBNR, trend, credibility, seasonality, and utilization/unit-cost
+development triangles and IBNR, trend, credibility, seasonality, and frequency-severity
 decomposition, computed from long, transactional tables. The only dependencies are `numpy`
 and `pandas`, and every result is a DataFrame or Series.
 
@@ -103,7 +103,7 @@ frequency-severity views (`frequency_severity`, `decompose_trend`). `filter(...)
 | `rolling(window, groupby)` | rolling-window summaries |
 | `trend(prior/current windows, groupby)` | period-over-period trend |
 | `components(...)` / `component_summary(...)` | component / driver breakdowns |
-| `decompose_trend(...)` | utilization × unit cost (× mix) split |
+| `decompose_trend(...)` | frequency × severity (× mix) split |
 | `actual_vs_expected(expected, actual, ...)` | actual-versus-expected with variances |
 | `claimants(...)` / `top_claimants(...)` / `claimant_concentration(...)` | large-claimant and concentration views |
 | `pool_claimants(claimant_col, pooling_point)` | pooled vs. excess by claimant |
@@ -231,8 +231,8 @@ seasonality do not bias the slope. Rate-based projection is in the forecast modu
 
 ## Frequency-severity and per-exposure decomposition
 
-Split a per-exposure loss into utilization and unit cost, and decompose the change between two
-periods into utilization and unit-cost effects. It requires a claim or service count
+Split a per-exposure loss into frequency and severity, and decompose the change between two
+periods into frequency and severity effects. It requires a claim or service count
 alongside losses and exposure:
 
 ```python
@@ -250,11 +250,11 @@ trend = decompose_per_exposure_trend(
     count_col="claim_count", loss_col="claims", exposure_col="member_months",
     on="plan",            # optional; omit for a single total row
 )
-# loss_per_exposure_trend == util_trend * cost_trend (exact); loss_per_exposure_change == util_effect + cost_effect
+# loss_per_exposure_trend == frequency_trend * severity_trend (exact); loss_per_exposure_change == frequency_effect + severity_effect
 ```
 
-Pass `mix_by` to split the per-exposure trend into utilization, unit cost, and mix when the book is a blend of
-cells whose composition changes between periods; otherwise a book-wide utilization or cost
+Pass `mix_by` to split the per-exposure trend into frequency, severity, and mix when the book is a blend of
+cells whose composition changes between periods; otherwise a book-wide frequency or severity
 trend absorbs membership-mix shifts. The split uses LMDI (logarithmic mean Divisia index),
 which is order-independent and leaves no residual. Every cell must have positive count, loss,
 and exposure in both periods. On an `Experience`, the same split is `exp.decompose_trend(...)`,

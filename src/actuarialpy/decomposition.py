@@ -1,14 +1,14 @@
 """Frequency-severity and per-exposure trend decomposition.
 
-Splits a per-exposure loss (pure premium) into its utilization and unit-cost
-drivers, and decomposes the change between two periods into a utilization effect and
-a unit-cost effect -- the standard "how much of the trend is utilization vs unit
-cost" exhibit. Decomposing requires a claim (or service) count alongside losses and
+Splits a per-exposure loss (pure premium) into its frequency and severity
+drivers, and decomposes the change between two periods into a frequency effect and
+a severity effect -- the standard "how much of the trend is frequency vs severity"
+exhibit (a health shop's utilization vs unit cost). Decomposing requires a claim (or service) count alongside losses and
 exposure.
 
 Passing ``mix_by`` to :func:`decompose_per_exposure_trend` adds a third **mix** component
-(utilization x unit cost x mix), separating the effect of the exposure composition
-shifting across cells from genuine within-cell utilization and unit-cost movement.
+(frequency x severity x mix), separating the effect of the exposure composition
+shifting across cells from genuine within-cell frequency and severity movement.
 """
 
 from __future__ import annotations
@@ -79,12 +79,12 @@ def _lmdi_three_way(
     m0: np.ndarray, n0: np.ndarray, a0: np.ndarray,
     m1: np.ndarray, n1: np.ndarray, a1: np.ndarray,
 ) -> dict[str, float]:
-    """LMDI utilization / unit-cost / mix split for one reporting group.
+    """LMDI frequency / severity / mix split for one reporting group.
 
     Each argument is an array over the mix cells: ``m`` exposure, ``n`` count, ``a``
     dollars; suffix ``0`` prior and ``1`` current. Returns the multiplicative factors
-    (``util_trend * cost_trend * mix_trend == loss_per_exposure_trend``) and the additive dollar
-    effects (``util_effect + cost_effect + mix_effect == loss_per_exposure_change``); both exact.
+    (``frequency_trend * severity_trend * mix_trend == loss_per_exposure_trend``) and the additive dollar
+    effects (``frequency_effect + severity_effect + mix_effect == loss_per_exposure_change``); both exact.
     """
     big_m0, big_m1 = m0.sum(), m1.sum()
     u0, c0, w0 = n0 / m0, a0 / n0, m0 / big_m0
@@ -99,12 +99,12 @@ def _lmdi_three_way(
         "loss_per_exposure_prior": p0,
         "loss_per_exposure_current": p1,
         "loss_per_exposure_trend": p1 / p0,
-        "util_trend": float(np.exp(np.sum(omega * ln_u))),
-        "cost_trend": float(np.exp(np.sum(omega * ln_c))),
+        "frequency_trend": float(np.exp(np.sum(omega * ln_u))),
+        "severity_trend": float(np.exp(np.sum(omega * ln_c))),
         "mix_trend": float(np.exp(np.sum(omega * ln_w))),
         "loss_per_exposure_change": p1 - p0,
-        "util_effect": float(np.sum(l_cell * ln_u)),
-        "cost_effect": float(np.sum(l_cell * ln_c)),
+        "frequency_effect": float(np.sum(l_cell * ln_u)),
+        "severity_effect": float(np.sum(l_cell * ln_c)),
         "mix_effect": float(np.sum(l_cell * ln_w)),
     }
 
@@ -119,7 +119,7 @@ def _decompose_per_exposure_trend_mix(
     on: list[str],
     mix_by: str | Iterable[str],
 ) -> pd.DataFrame:
-    """Three-way (utilization x unit cost x mix) per-exposure loss decomposition via LMDI."""
+    """Three-way (frequency x severity x mix) per-exposure loss decomposition via LMDI."""
     mix_keys = as_list(mix_by)
     overlap = [k for k in mix_keys if k in on]
     if overlap:
@@ -150,7 +150,7 @@ def _decompose_per_exposure_trend_mix(
         raise ValueError(
             "decompose_per_exposure_trend(mix_by=...) requires every mix cell to have positive "
             f"{exposure_col!r}, {count_col!r}, and {loss_col!r} in BOTH periods; the "
-            "within-cell utilization x unit cost x mix split is undefined otherwise. "
+            "within-cell frequency x severity x mix split is undefined otherwise. "
             "Combine sparse cells or filter cells that enter/exit between periods. "
             f"Offending cell(s):\n{shown.to_string(index=False)}"
         )
@@ -175,8 +175,8 @@ def _decompose_per_exposure_trend_mix(
     out = pd.DataFrame(records)
     ordered = on + [
         "loss_per_exposure_prior", "loss_per_exposure_current", "loss_per_exposure_trend",
-        "util_trend", "cost_trend", "mix_trend",
-        "loss_per_exposure_change", "util_effect", "cost_effect", "mix_effect",
+        "frequency_trend", "severity_trend", "mix_trend",
+        "loss_per_exposure_change", "frequency_effect", "severity_effect", "mix_effect",
     ]
     return out[[col for col in ordered if col in out.columns]]
 
@@ -197,20 +197,21 @@ def decompose_per_exposure_trend(
     :func:`frequency_severity_summary` (optionally by the ``on`` keys), aligned, and the
     change reported two exact ways:
 
-    - **Multiplicative trend**: ``loss_per_exposure_trend == util_trend * cost_trend``, where
-      ``util_trend`` is the frequency ratio and ``cost_trend`` the severity ratio.
-    - **Additive dollars**: ``loss_per_exposure_change == util_effect + cost_effect`` via a symmetric
+    - **Multiplicative trend**: ``loss_per_exposure_trend == frequency_trend * severity_trend``, where
+      ``frequency_trend`` and ``severity_trend`` are the period-over-period ratios of
+      frequency and severity.
+    - **Additive dollars**: ``loss_per_exposure_change == frequency_effect + severity_effect`` via a symmetric
       (midpoint) split, so the contributions sum exactly to the per-exposure change.
 
     Pass ``mix_by`` (a column or list of columns) to add a third **mix** component. The per-exposure loss
-    is then decomposed into utilization, unit cost, and the effect of the exposure
-    composition shifting across the ``mix_by`` cells. Utilization and unit cost are
+    is then decomposed into frequency, severity, and the effect of the exposure
+    composition shifting across the ``mix_by`` cells. Frequency and severity are
     measured *within* each cell (free of composition), and mix captures the aggregate
     movement that comes purely from the cell weights changing -- the piece the two-way
-    otherwise misattributes to utilization and unit cost. The split uses the LMDI
+    otherwise misattributes to frequency and severity. The split uses the LMDI
     (logarithmic mean Divisia index) convention, which is order-free and reconciles
-    exactly: ``loss_per_exposure_trend == util_trend * cost_trend * mix_trend`` and
-    ``loss_per_exposure_change == util_effect + cost_effect + mix_effect``.
+    exactly: ``loss_per_exposure_trend == frequency_trend * severity_trend * mix_trend`` and
+    ``loss_per_exposure_change == frequency_effect + severity_effect + mix_effect``.
 
     A list of columns in ``mix_by`` defines the cells as their cross -- one blended mix
     term, not a per-column attribution; to attribute mix to each dimension separately,
@@ -244,19 +245,19 @@ def decompose_per_exposure_trend(
             axis=1,
         )
 
-    merged["util_trend"] = safe_divide(merged["frequency_current"], merged["frequency_prior"])
-    merged["cost_trend"] = safe_divide(merged["severity_current"], merged["severity_prior"])
+    merged["frequency_trend"] = safe_divide(merged["frequency_current"], merged["frequency_prior"])
+    merged["severity_trend"] = safe_divide(merged["severity_current"], merged["severity_prior"])
     merged["loss_per_exposure_trend"] = safe_divide(merged["loss_per_exposure_current"], merged["loss_per_exposure_prior"])
 
     freq_mean = (merged["frequency_prior"] + merged["frequency_current"]) / 2
     sev_mean = (merged["severity_prior"] + merged["severity_current"]) / 2
     merged["loss_per_exposure_change"] = merged["loss_per_exposure_current"] - merged["loss_per_exposure_prior"]
-    merged["util_effect"] = (merged["frequency_current"] - merged["frequency_prior"]) * sev_mean
-    merged["cost_effect"] = (merged["severity_current"] - merged["severity_prior"]) * freq_mean
+    merged["frequency_effect"] = (merged["frequency_current"] - merged["frequency_prior"]) * sev_mean
+    merged["severity_effect"] = (merged["severity_current"] - merged["severity_prior"]) * freq_mean
 
     ordered = keys + [
-        "loss_per_exposure_prior", "loss_per_exposure_current", "loss_per_exposure_trend", "util_trend", "cost_trend",
-        "loss_per_exposure_change", "util_effect", "cost_effect",
+        "loss_per_exposure_prior", "loss_per_exposure_current", "loss_per_exposure_trend", "frequency_trend", "severity_trend",
+        "loss_per_exposure_change", "frequency_effect", "severity_effect",
         "frequency_prior", "frequency_current", "severity_prior", "severity_current",
     ]
     return merged[[col for col in ordered if col in merged.columns]]

@@ -43,30 +43,30 @@ def test_summary_groupby():
 
 def test_multiplicative_decomposition_exact():
     d = _dec(_book(0.40, 250.0), _book(0.42, 262.5)).iloc[0]
-    assert d["util_trend"] * d["cost_trend"] == pytest.approx(d["loss_per_exposure_trend"])
-    assert d["util_trend"] == pytest.approx(1.05)
-    assert d["cost_trend"] == pytest.approx(1.05)
+    assert d["frequency_trend"] * d["severity_trend"] == pytest.approx(d["loss_per_exposure_trend"])
+    assert d["frequency_trend"] == pytest.approx(1.05)
+    assert d["severity_trend"] == pytest.approx(1.05)
     assert d["loss_per_exposure_trend"] == pytest.approx(1.1025)
 
 
 def test_additive_decomposition_exact():
     d = _dec(_book(0.40, 250.0), _book(0.42, 262.5)).iloc[0]
-    assert d["util_effect"] + d["cost_effect"] == pytest.approx(d["loss_per_exposure_change"])
+    assert d["frequency_effect"] + d["severity_effect"] == pytest.approx(d["loss_per_exposure_change"])
     assert d["loss_per_exposure_change"] == pytest.approx(10.25)
 
 
-def test_pure_utilization_change():
+def test_pure_frequency_change():
     d = _dec(_book(0.40, 250.0), _book(0.48, 250.0)).iloc[0]   # only frequency moves
-    assert d["cost_trend"] == pytest.approx(1.0)
-    assert d["util_trend"] == pytest.approx(1.2)
-    assert d["cost_effect"] == pytest.approx(0.0)
+    assert d["severity_trend"] == pytest.approx(1.0)
+    assert d["frequency_trend"] == pytest.approx(1.2)
+    assert d["severity_effect"] == pytest.approx(0.0)
 
 
 def test_pure_cost_change():
     d = _dec(_book(0.40, 250.0), _book(0.40, 275.0)).iloc[0]   # only severity moves
-    assert d["util_trend"] == pytest.approx(1.0)
-    assert d["cost_trend"] == pytest.approx(1.1)
-    assert d["util_effect"] == pytest.approx(0.0)
+    assert d["frequency_trend"] == pytest.approx(1.0)
+    assert d["severity_trend"] == pytest.approx(1.1)
+    assert d["frequency_effect"] == pytest.approx(0.0)
 
 
 def test_decompose_grouped_outer_join():
@@ -80,10 +80,10 @@ def test_decompose_grouped_outer_join():
 
 def test_output_leads_with_loss_per_exposure_and_trends():
     cols = list(_dec(_book(0.40, 250.0), _book(0.42, 262.5)).columns)
-    assert cols[:5] == ["loss_per_exposure_prior", "loss_per_exposure_current", "loss_per_exposure_trend", "util_trend", "cost_trend"]
+    assert cols[:5] == ["loss_per_exposure_prior", "loss_per_exposure_current", "loss_per_exposure_trend", "frequency_trend", "severity_trend"]
 
 
-# --- three-way (utilization x unit cost x mix) via mix_by -------------------
+# --- three-way (frequency x severity x mix) via mix_by -------------------
 
 def _cells(spec):
     """spec: {cell_value: (member_months, count, loss)} -> one row per cell."""
@@ -97,7 +97,7 @@ def _mix(prior, current, **kw):
                                 exposure_col="member_months", mix_by="cell", **kw)
 
 
-# the worked example: util ~+5.0%, unit cost ~+4.6%, mix ~+8.8%, per-exposure ~+19.5%
+# the worked example: frequency ~+5.0%, severity ~+4.6%, mix ~+8.8%, per-exposure ~+19.5%
 _PRIOR = _cells({"Healthy": (70000.0, 28000.0, 14_000_000.0),
                  "Chronic": (30000.0, 24000.0, 21_600_000.0)})
 _CURR = _cells({"Healthy": (64000.0, 26880.0, 13_977_600.0),
@@ -106,18 +106,18 @@ _CURR = _cells({"Healthy": (64000.0, 26880.0, 13_977_600.0),
 
 def test_three_way_multiplicative_reconciles():
     d = _mix(_PRIOR, _CURR).iloc[0]
-    assert d["util_trend"] * d["cost_trend"] * d["mix_trend"] == pytest.approx(d["loss_per_exposure_trend"])
+    assert d["frequency_trend"] * d["severity_trend"] * d["mix_trend"] == pytest.approx(d["loss_per_exposure_trend"])
 
 
 def test_three_way_additive_reconciles():
     d = _mix(_PRIOR, _CURR).iloc[0]
-    assert d["util_effect"] + d["cost_effect"] + d["mix_effect"] == pytest.approx(d["loss_per_exposure_change"])
+    assert d["frequency_effect"] + d["severity_effect"] + d["mix_effect"] == pytest.approx(d["loss_per_exposure_change"])
 
 
 def test_three_way_known_values():
     d = _mix(_PRIOR, _CURR).iloc[0]
-    assert d["util_trend"] == pytest.approx(1.0499, abs=1e-3)
-    assert d["cost_trend"] == pytest.approx(1.0463, abs=1e-3)
+    assert d["frequency_trend"] == pytest.approx(1.0499, abs=1e-3)
+    assert d["severity_trend"] == pytest.approx(1.0463, abs=1e-3)
     assert d["mix_trend"] == pytest.approx(1.0881, abs=1e-3)
     assert d["loss_per_exposure_trend"] == pytest.approx(1.19535, abs=1e-4)
 
@@ -127,7 +127,7 @@ def test_mix_by_none_is_two_way_unchanged():
     assert "mix_trend" not in two.columns          # no third component
     assert "mix_effect" not in two.columns
     row = two.iloc[0]
-    assert row["util_trend"] * row["cost_trend"] == pytest.approx(row["loss_per_exposure_trend"])
+    assert row["frequency_trend"] * row["severity_trend"] == pytest.approx(row["loss_per_exposure_trend"])
 
 
 def test_three_way_differs_from_book_wide_two_way():
@@ -135,8 +135,8 @@ def test_three_way_differs_from_book_wide_two_way():
     two = _dec(_PRIOR, _CURR).iloc[0]
     three = _mix(_PRIOR, _CURR).iloc[0]
     assert two["loss_per_exposure_trend"] == pytest.approx(three["loss_per_exposure_trend"])      # same total
-    assert two["util_trend"] > three["util_trend"] + 0.03              # book-wide util overstated
-    assert two["cost_trend"] > three["cost_trend"] + 0.03              # book-wide cost overstated
+    assert two["frequency_trend"] > three["frequency_trend"] + 0.03              # book-wide util overstated
+    assert two["severity_trend"] > three["severity_trend"] + 0.03              # book-wide cost overstated
 
 
 def test_pure_mix_shift_isolated():
@@ -146,11 +146,11 @@ def test_pure_mix_shift_isolated():
     current = _cells({"A": (50000.0, 20000.0, 10_000_000.0),  # same u,c
                       "B": (50000.0, 40000.0, 36_000_000.0)})
     d = _mix(prior, current).iloc[0]
-    assert d["util_trend"] == pytest.approx(1.0)
-    assert d["cost_trend"] == pytest.approx(1.0)
+    assert d["frequency_trend"] == pytest.approx(1.0)
+    assert d["severity_trend"] == pytest.approx(1.0)
     assert d["mix_trend"] == pytest.approx(d["loss_per_exposure_trend"])            # all trend is mix
-    assert d["util_effect"] == pytest.approx(0.0, abs=1e-9)
-    assert d["cost_effect"] == pytest.approx(0.0, abs=1e-9)
+    assert d["frequency_effect"] == pytest.approx(0.0, abs=1e-9)
+    assert d["severity_effect"] == pytest.approx(0.0, abs=1e-9)
 
 
 def test_single_mix_cell_gives_zero_mix_and_matches_two_way():
@@ -160,8 +160,8 @@ def test_single_mix_cell_gives_zero_mix_and_matches_two_way():
     d = _mix(prior, current).iloc[0]
     two = _dec(prior, current).iloc[0]
     assert d["mix_trend"] == pytest.approx(1.0)
-    assert d["util_trend"] == pytest.approx(two["util_trend"])
-    assert d["cost_trend"] == pytest.approx(two["cost_trend"])
+    assert d["frequency_trend"] == pytest.approx(two["frequency_trend"])
+    assert d["severity_trend"] == pytest.approx(two["severity_trend"])
 
 
 # 2x2 product x age fixture (within-cell util & cost fixed; only the joint mix moves)
@@ -187,10 +187,10 @@ def _padec(mix_by, **kw):
 
 def test_mix_by_list_cross_reconciles_and_captures_all_composition():
     d = _padec(["product", "age"]).iloc[0]
-    assert d["util_trend"] * d["cost_trend"] * d["mix_trend"] == pytest.approx(d["loss_per_exposure_trend"])
+    assert d["frequency_trend"] * d["severity_trend"] * d["mix_trend"] == pytest.approx(d["loss_per_exposure_trend"])
     # within-cell util & cost are fixed in the fixture -> all movement is mix
-    assert d["util_trend"] == pytest.approx(1.0)
-    assert d["cost_trend"] == pytest.approx(1.0)
+    assert d["frequency_trend"] == pytest.approx(1.0)
+    assert d["severity_trend"] == pytest.approx(1.0)
     assert d["mix_trend"] == pytest.approx(d["loss_per_exposure_trend"])
 
 
@@ -203,7 +203,7 @@ def test_cross_mix_is_not_sum_of_marginal_mixes():
     # but each single-dimension run still reconciles
     for one in ("product", "age"):
         d = _padec(one).iloc[0]
-        assert d["util_trend"] * d["cost_trend"] * d["mix_trend"] == pytest.approx(d["loss_per_exposure_trend"])
+        assert d["frequency_trend"] * d["severity_trend"] * d["mix_trend"] == pytest.approx(d["loss_per_exposure_trend"])
 
 
 def test_on_and_mix_by_compose():
@@ -214,7 +214,7 @@ def test_on_and_mix_by_compose():
                                exposure_col="member_months", on="lob", mix_by="cell")
     assert set(out["lob"]) == {"IP", "OP"}
     for _, r in out.iterrows():
-        assert r["util_trend"] * r["cost_trend"] * r["mix_trend"] == pytest.approx(r["loss_per_exposure_trend"])
+        assert r["frequency_trend"] * r["severity_trend"] * r["mix_trend"] == pytest.approx(r["loss_per_exposure_trend"])
 
 
 def test_mix_by_requires_positive_cells():
@@ -236,5 +236,5 @@ def test_three_way_reconciles_on_random_books():
             return pd.DataFrame(dict(cell=[f"c{i}" for i in range(k)],
                                      member_months=mm, claim_count=n, claims=cost * n))
         d = _mix(period(), period()).iloc[0]
-        assert d["util_trend"] * d["cost_trend"] * d["mix_trend"] == pytest.approx(d["loss_per_exposure_trend"])
-        assert d["util_effect"] + d["cost_effect"] + d["mix_effect"] == pytest.approx(d["loss_per_exposure_change"])
+        assert d["frequency_trend"] * d["severity_trend"] * d["mix_trend"] == pytest.approx(d["loss_per_exposure_trend"])
+        assert d["frequency_effect"] + d["severity_effect"] + d["mix_effect"] == pytest.approx(d["loss_per_exposure_change"])

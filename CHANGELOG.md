@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.38.0
+
+### Changed
+
+- Decomposition components renamed to match the `frequency_severity_summary`
+  columns: `util_trend` / `cost_trend` / `util_effect` / `cost_effect` are
+  now `frequency_trend` / `severity_trend` / `frequency_effect` /
+  `severity_effect` (`mix_*` unchanged). Identities hold as before:
+  `loss_per_exposure_trend == frequency_trend * severity_trend (* mix_trend)`
+  and `loss_per_exposure_change == frequency_effect + severity_effect
+  (+ mix_effect)`. The utilization / unit-cost dialect is a labels-level
+  rename like any other domain vocabulary.
+
 ## 0.37.0
 
 ### Removed

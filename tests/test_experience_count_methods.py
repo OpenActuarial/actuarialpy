@@ -67,14 +67,14 @@ def test_decompose_trend_period_mode_matches_free_and_reconciles():
                                 exposure_col="member_months", mix_by="segment")
     pd.testing.assert_frame_equal(fac, free)
     r = fac.iloc[0]
-    assert r["util_trend"] * r["cost_trend"] * r["mix_trend"] == pytest.approx(r["loss_per_exposure_trend"])
+    assert r["frequency_trend"] * r["severity_trend"] * r["mix_trend"] == pytest.approx(r["loss_per_exposure_trend"])
 
 
 def test_decompose_trend_two_way_without_mix():
     fac = _exp().decompose_trend(period_col="year", prior_period=2024, current_period=2025)
     assert "mix_trend" not in fac.columns
     r = fac.iloc[0]
-    assert r["util_trend"] * r["cost_trend"] == pytest.approx(r["loss_per_exposure_trend"])
+    assert r["frequency_trend"] * r["severity_trend"] == pytest.approx(r["loss_per_exposure_trend"])
 
 
 def test_decompose_trend_uses_bound_date_with_ranges():
@@ -95,7 +95,7 @@ def test_decompose_trend_on_groups_one_row_per_group():
                                  mix_by="segment", groupby="region")
     assert set(out["region"]) == {"North", "South"}
     for _, r in out.iterrows():
-        assert r["util_trend"] * r["cost_trend"] * r["mix_trend"] == pytest.approx(r["loss_per_exposure_trend"])
+        assert r["frequency_trend"] * r["severity_trend"] * r["mix_trend"] == pytest.approx(r["loss_per_exposure_trend"])
 
 
 def test_decompose_trend_on_and_mix_by_must_differ():
