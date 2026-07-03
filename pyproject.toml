@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "actuarialpy"
-version = "0.38.0"
-description = "Core actuarial analysis tools for Python: experience analysis, trend, completion, seasonality, credibility, exposure, and TVM."
+version = "0.39.0"
+description = "Experience analysis and shared actuarial primitives: credibility, trend, completion, seasonality, financial mathematics, and underwriting margin on tidy tables."
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"

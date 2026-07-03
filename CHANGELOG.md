@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- Example scripts are now executed by the test suite. Three examples that
+  had silently broken at the 0.37 rename (`experience_basics`,
+  `rolling_trend_monitor`, `trend_decomposition`) are updated to the
+  current frequency/severity per-exposure API.
+
+### Changed
+
+- More descriptive package `description` metadata.
+
 ## 0.38.0
 
 ### Changed

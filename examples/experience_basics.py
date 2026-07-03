@@ -3,7 +3,7 @@
 Bind the column roles once with ``Experience`` and then summarize the book any
 way you like with ``.by`` and ``.views`` -- no need to re-pass the claim,
 premium, and exposure columns each time. The free-function metric primitives
-(``loss_ratio``, ``pmpm``, ``pure_premium``, ...) are also shown.
+(``loss_ratio``, ``per_exposure``, ``pure_premium``, ...) are also shown.
 
     pip install actuarialpy
     python experience_basics.py
@@ -34,7 +34,7 @@ def main() -> None:
     section("1. Metric primitives (free functions on scalars)")
     print(f"loss_ratio(8.5M, 10M)        : {ap.loss_ratio(8_500_000, 10_000_000):.3f}")
     print(f"pure_premium(330k, 6k)       : {ap.pure_premium(330_000, 6_000):.2f}")
-    print(f"pmpm(330k, 6k member-months) : {ap.pmpm(330_000, 6_000):.2f}")
+    print(f"per_exposure(330k, 6k member-months) : {ap.per_exposure(330_000, 6_000):.2f}")
     print(f"permissible_loss_ratio(0.14) : {ap.permissible_loss_ratio(0.14):.3f}")
 
     # Declare the roles ONCE; reuse the object for every cut below.
