@@ -41,7 +41,7 @@ def _order_summary_columns(
     Order: date-like grouping columns, then other grouping columns, then exposure
     (volume), then the full expense block (components, total, then per-exposure rates),
     then the full revenue block, and finally the ratio. This keeps each total next to
-    its own per-exposure rate (e.g. total expense beside expense PMPM) and is identical
+    its own per-exposure rate (e.g. total expense beside its per-exposure rate) and is identical
     across every view. Any unexpected columns are appended rather than dropped.
     """
     date_groups = [g for g in groups if is_date_like(summary[g], g)]

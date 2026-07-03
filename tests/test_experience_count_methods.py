@@ -10,11 +10,11 @@ from actuarialpy import decompose_per_exposure_trend, fit_trend, frequency_sever
 def _panel():
     """Monthly two-year panel by morbidity segment and region; enrollment shifts toward High in 2025.
 
-    Within-region utilization and unit cost are uniform across regions, so aggregating
+    Within-region frequency and severity are uniform across regions, so aggregating
     over region reproduces the segment-level totals exactly.
     """
     rows = []
-    specs = {"Low": (0.45, 420.0), "High": (0.95, 820.0)}   # (utilization, unit cost)
+    specs = {"Low": (0.45, 420.0), "High": (0.95, 820.0)}   # (frequency, severity)
     regions = {"North": 0.6, "South": 0.4}                  # split of member months
     for year in (2024, 2025):
         growth = 1.04 if year == 2025 else 1.0              # unit-cost trend

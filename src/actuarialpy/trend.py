@@ -278,7 +278,7 @@ def fit_trend(
     """Fit an exponential trend to a rate series by log-linear regression.
 
     Aggregates ``df`` to the ``freq`` grain (summing ``value_col`` and, if given,
-    ``exposure_col``), forms the rate -- ``value / exposure`` (e.g. PMPM) when
+    ``exposure_col``), forms the rate -- ``value / exposure`` (the per-exposure rate) when
     ``exposure_col`` is supplied, otherwise ``value`` itself -- and fits
     ``log(rate) = intercept + slope * t`` by ordinary least squares, with ``t`` in years
     from the first period. The fitted annual trend is ``exp(slope) - 1``.

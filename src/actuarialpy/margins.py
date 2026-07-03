@@ -44,9 +44,9 @@ def add_margin(
     """Add an underwriting-margin column (premium minus summed expense columns).
 
     ``expense_cols`` is summed row-wise and may mix losses and loadings (e.g.
-    medical/claims, retention, commission, allocated overhead). Optionally also
+    claims, retention, commission, allocated overhead). Optionally also
     add the margin ratio (``ratio_col``) and a per-exposure margin
-    (``per_exposure_col``, requires ``exposure_col``) such as margin PMPM.
+    (``per_exposure_col``, requires ``exposure_col``) such as margin per exposure unit.
     """
     validate_columns(df, [premium_col])
     result = df.copy() if copy else df

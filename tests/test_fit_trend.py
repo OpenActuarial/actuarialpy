@@ -47,7 +47,7 @@ def test_robust_to_outlier_endpoint_where_two_point_is_not():
 
 
 def test_fits_the_rate_not_the_level():
-    # claims grow from both PMPM trend and membership growth; only the PMPM trend is fitted
+    # claims grow from both per-exposure trend and exposure growth; only the per-exposure trend is fitted
     df, t = _series(0.072)
     members = 1000.0 * (1.02) ** t
     cost = (df["claims"] / df["mm"]).to_numpy()

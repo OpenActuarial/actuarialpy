@@ -1,4 +1,4 @@
-"""Tests for frequency-severity summary and PMPM trend decomposition."""
+"""Tests for frequency-severity summary and per-exposure trend decomposition."""
 
 import numpy as np
 import pandas as pd

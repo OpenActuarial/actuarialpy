@@ -2,7 +2,8 @@
 
 Compare a prior period to a current period on an exposure-adjusted basis with
 ``trend_summary``, then turn the observed change into an annualized trend and
-project a base PMPM forward with ``project_forward``.
+project a base per-exposure rate forward with ``project_forward`` (PMPM in this
+health-flavored walkthrough).
 
     pip install actuarialpy
     python trend_and_forecast.py

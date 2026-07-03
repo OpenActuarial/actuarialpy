@@ -1,6 +1,6 @@
 # actuarialpy
 
-Standard actuarial analyses on claims, eligibility, and premium data: loss ratios and PMPM,
+Standard actuarial analyses on claims, exposure, and premium data: loss ratios and per-exposure rates,
 development triangles and IBNR, trend, credibility, seasonality, and frequency-severity
 decomposition, computed from long, transactional tables. The only dependencies are `numpy`
 and `pandas`, and every result is a DataFrame or Series.
@@ -27,7 +27,7 @@ and `pandas`, and every result is a DataFrame or Series.
 
 **`actuarialpy`** is a calculation library for loss ratios, per-exposure rates, chain-ladder
 development, credibility, seasonal factors, and the LMDI trend decomposition, applied to
-claims, eligibility, and premium data. It does not perform data preparation or encode filed
+claims, exposure, and premium data. It does not perform data preparation or encode filed
 methodology: the caller supplies the table and selects the method.
 
 There are two interfaces:
@@ -60,10 +60,10 @@ exp = ap.Experience(
     revenue="premium",           # the premium / revenue column(s)
     exposure="member_months",    # the exposure column(s)
     date="month",                # the time column
-    profile="health",            # naming profile (health -> MLR, PMPM terminology)
+    profile="health",            # naming profile (health -> mlr on output views)
 )
 
-exp.by("group_id")                          # grouped totals + loss ratio / MLR
+exp.by("group_id")                          # grouped totals + loss ratio (mlr under the health profile)
 exp.rolling(12, groupby="group_id")         # trailing-12 view per group
 exp.trend(date_col="month",                 # period-over-period trend
           prior_start="2024-01-01", prior_end="2024-12-01",
@@ -71,7 +71,8 @@ exp.trend(date_col="month",                 # period-over-period trend
 ```
 
 Build `data` with pandas. Typically this is a single `groupby` that aggregates claims to the
-grain, counts member-months from eligibility, and joins premium:
+grain, counts exposure from a correctly-grained table (here a health book's
+member-months from eligibility), and joins premium:
 
 ```python
 g = ["group_id", "month"]
@@ -255,7 +256,7 @@ trend = decompose_per_exposure_trend(
 
 Pass `mix_by` to split the per-exposure trend into frequency, severity, and mix when the book is a blend of
 cells whose composition changes between periods; otherwise a book-wide frequency or severity
-trend absorbs membership-mix shifts. The split uses LMDI (logarithmic mean Divisia index),
+trend absorbs exposure-mix shifts. The split uses LMDI (logarithmic mean Divisia index),
 which is order-independent and leaves no residual. Every cell must have positive count, loss,
 and exposure in both periods. On an `Experience`, the same split is `exp.decompose_trend(...)`,
 using the bound `count`, `expense`, and `exposure` roles. See
@@ -268,7 +269,7 @@ Two separate tools address them.
 
 `seasonality_factors` estimates one multiplier per calendar period from several years of
 history (ratio-to-moving-average decomposition, normalized to average 1.0). Pass
-`exposure_col` to fit on a rate (PMPM), which removes membership growth so only the
+`exposure_col` to fit on a rate (per exposure), which removes exposure growth so only the
 time-of-year pattern remains:
 
 ```python

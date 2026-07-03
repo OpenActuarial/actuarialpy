@@ -103,7 +103,7 @@ def test_deseasonalize_flattens_to_smooth_trend():
 
 
 def test_value_only_matches_exposure_weighted_when_membership_flat():
-    df = _book(growth=1.0)  # constant membership -> totals and PMPM share the same shape
+    df = _book(growth=1.0)  # constant exposure -> totals and the per-exposure rate share the same shape
     f_rate = seasonality_factors(df, date_col="month", value_col="claims", exposure_col="member_months")
     f_val = seasonality_factors(df, date_col="month", value_col="claims")
     assert np.allclose(f_rate.values, f_val.values, atol=1e-9)

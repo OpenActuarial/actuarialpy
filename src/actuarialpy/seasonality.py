@@ -134,15 +134,15 @@ def seasonality_factors(
 
     The series is first aggregated to the period grain (summing ``value_col`` and, if
     given, ``exposure_col``). With ``exposure_col`` the factors are computed on the
-    rate ``value / exposure`` (e.g. PMPM), which is the right basis for health
-    seasonality; without it they are computed on the value directly.
+    rate ``value / exposure``, the right basis when exposure itself moves with the
+    season; without it they are computed on the value directly.
 
     Methods:
 
     - ``"ratio_to_moving_average"`` (default): classical multiplicative decomposition.
       Each period is divided by a centered moving average (which removes trend and
       level), and the seasonal factor for a calendar period is the average of those
-      ratios across years. Robust to trend and membership growth.
+      ratios across years. Robust to trend and exposure growth.
     - ``"period_share"``: each period expressed as a share of its own year's average,
       then averaged by calendar period. Simpler, but assumes little within-year trend.
 

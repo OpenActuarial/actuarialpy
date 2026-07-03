@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.39.1
+
+### Changed
+
+- Documentation-only vocabulary sweep completing the 0.37--0.38 domain-agnostic
+  rename. Core docstrings no longer use unattributed health vocabulary
+  ("PMPM", "membership", "eligibility", "medical") as the default illustration
+  of per-exposure quantities; domain terms remain only where explicitly
+  attributed as a dialect (a health shop's `mlr`, member-months from
+  eligibility) or inside the `labels` / `profiles` opt-in layer, which is
+  unchanged. README, examples README, example walkthrough framings, and stale
+  test comments updated to match (`decompose_pmpm_trend` references corrected
+  to `decompose_per_exposure_trend`; the removed `pmpm` primitive corrected to
+  `per_exposure`). No code paths changed.
+
 ## 0.39.0
 
 ### Added

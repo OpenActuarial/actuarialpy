@@ -14,7 +14,7 @@ from actuarialpy.trend import project_forward
 
 
 def expected_from_rate(rate, exposure):
-    """Expected amount from a rate/PMPM and exposure."""
+    """Expected amount from a per-exposure rate and exposure."""
     return rate * exposure
 
 

@@ -11,6 +11,10 @@ python experience_basics.py
 
 Every script is standalone — run any one directly, in any order.
 
+The walkthroughs are health-flavored (member-months, PMPM print labels) as a
+concrete book to work through; the core they exercise is domain-agnostic, and
+the domain vocabulary lives entirely in these callers.
+
 **Start here:** [`renewal.py`](renewal.py) is the end-to-end study — it threads the
 individual surfaces below into a single group renewal, from experience to indicated rate
 change. The others each focus on one surface.
@@ -18,14 +22,14 @@ change. The others each focus on one surface.
 | Script | Surface | What it shows |
 |---|---|---|
 | `renewal.py` | **end-to-end** | a full group renewal: complete → trend → relativities (`adjust`) → pool large claimants → credibility-blend with the manual → load → `indicated_change` |
-| `experience_basics.py` | `Experience` facade, metrics | Bind roles once; `.by`, `.views`; metric primitives (`loss_ratio`, `pmpm`, `pure_premium`) |
+| `experience_basics.py` | `Experience` facade, metrics | Bind roles once; `.by`, `.views`; metric primitives (`loss_ratio`, `per_exposure`, `pure_premium`) |
 | `claimant_concentration.py` | claimants, pooling | `claimant_concentration`, `top_claimants`, `large_claimant_flags`, `pool_losses`, `excess_over_threshold` |
 | `reserving_ibnr.py` | reserving | `make_completion_triangle` → `completion_factors` → `apply_completion` → `ibnr`, per-line `completion_factors_by` + grouped `apply_completion(by=)`, and `develop_ultimate` (chain ladder vs Bornhuetter-Ferguson vs Benktander vs Cape Cod) |
 | `seasonality.py` | seasonality | `business_days_in_period`, `seasonality_factors` → `deseasonalize`, plus per-line `seasonality_factors_by` + grouped `deseasonalize(by=)` |
 | `restatement.py` | adjustments | `Experience.adjust` chain — scalar trend, per-region and per-line relativities, with a cumulative `audit_col` |
 | `trend_and_forecast.py` | trend | `trend_summary`, `annualized_trend`, `project_forward`, `trend_factor`, and `fit_trend` (log-linear trend with diagnostics, fit on deseasonalized history) |
-| `rolling_trend_monitor.py` | rolling, decomposition | a monthly change-in-trend monitor: each evaluation month compares the trailing-12 window to the same window a year earlier via `decompose_pmpm_trend`, reporting whether the year-over-year move is utilization- or unit-cost-driven |
-| `trend_decomposition.py` | decomposition | `decompose_pmpm_trend` two-way (utilization × unit cost), and the three-way `mix_by=` split — adds a mix term via LMDI, reconciling exactly; single dimension, the cross of two, and `on=` + `mix_by=` together; plus the `Experience.decompose_trend` facade method (same split with columns bound once) |
+| `rolling_trend_monitor.py` | rolling, decomposition | a monthly change-in-trend monitor: each evaluation month compares the trailing-12 window to the same window a year earlier via `decompose_per_exposure_trend`, reporting whether the year-over-year move is frequency- or severity-driven |
+| `trend_decomposition.py` | decomposition | `decompose_per_exposure_trend` two-way (frequency × severity), and the three-way `mix_by=` split — adds a mix term via LMDI, reconciling exactly; single dimension, the cross of two, and `on=` + `mix_by=` together; plus the `Experience.decompose_trend` facade method (same split with columns bound once) |
 | `credibility.py` | credibility | `credibility_weighted_estimate`, `Experience.credibility_weighted` |
 | `lifecycle_and_banding.py` | lifecycle, banding | `derive_status`, `Experience.by_status`, `Experience.by_band` |
 
@@ -46,11 +50,11 @@ change. The others each focus on one surface.
   swings hard, the other is mild), membership growth, and a cost trend, for the
   seasonality example.
 - **`sample_trend_cells()`** — a deterministic two-period (2024/2025) claims panel
-  split into morbidity-segment × region cells, with uniform within-cell utilization
+  split into morbidity-segment × region cells, with uniform within-cell frequency
   (+3%) and unit-cost (+4%) trend and an enrollment shift toward the High segment, so
   the book-wide two-way overstates both drivers and the mix term recovers the
   difference; carries `claim_count`, `allowed`, and `premium` so it drives both the
-  free `decompose_pmpm_trend` and the `Experience.decompose_trend` facade method in the
+  free `decompose_per_exposure_trend` and the `Experience.decompose_trend` facade method in the
   trend-decomposition example.
 
 ## Note

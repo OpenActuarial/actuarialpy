@@ -60,15 +60,16 @@ class Experience:
     optionally x mix). :meth:`fit_trend` regresses a developed trend on the bound history.
 
     **Grain matters.** ``Experience`` aggregates by *summing* the bound columns, so it
-    expects rows at the grain of the exposure unit -- one row per member-month, with
-    ``member_months`` = 1 (or the eligible fraction). If your data is *long* (one row per
-    service line, so the same member-month repeats across several rows), summing the
-    exposure column overcounts it, and every per-exposure figure -- PMPM, frequency, the
-    loss-ratio denominator -- is wrong by the number of rows per member-month. ``Experience``
-    does not detect this: it has no member key, so it cannot tell a long frame from a wide
-    one. For long or multi-table warehouse data, either aggregate to member-month grain
-    first, or use :meth:`bind`, which sources exposure from a correctly-grained table (e.g.
-    eligibility) via :class:`~actuarialpy.Count` and never sums a repeated column.
+    expects rows at the grain of the exposure unit -- one row per unit (a member-month in
+    a health book, a policy-month in life), with the exposure column = 1 (or the eligible
+    fraction). If your data is *long* (one row per service line or transaction, so the same
+    exposure unit repeats across several rows), summing the exposure column overcounts it,
+    and every per-exposure figure -- the per-exposure rate, frequency, the loss-ratio
+    denominator -- is wrong by the number of rows per unit. ``Experience`` does not detect
+    this: it has no record key, so it cannot tell a long frame from a wide one. For long or
+    multi-table warehouse data, either aggregate to the exposure grain first, or use
+    :meth:`bind`, which sources exposure from a correctly-grained table (e.g. a health
+    book's eligibility) via :class:`~actuarialpy.Count` and never sums a repeated column.
     """
 
     data: pd.DataFrame
@@ -162,8 +163,8 @@ class Experience:
         downstream view -- :meth:`trend`, :meth:`rolling`, :meth:`by`, and the rest --
         then operates on the deseasonalized series. By default the expense
         (loss / claims) columns are adjusted; pass ``columns`` to choose others. Only
-        the numerator is touched: exposure is left alone, so a deseasonalized PMPM is
-        simply deseasonalized claims over unchanged member months.
+        the numerator is touched: exposure is left alone, so a deseasonalized
+        per-exposure rate is simply deseasonalized claims over unchanged exposure.
 
         ``factors`` may be a flat Series (one pattern) or a tidy per-segment table from
         :func:`seasonality_factors_by`; with the latter, pass ``by`` naming the grouping
@@ -451,8 +452,8 @@ class Experience:
     ) -> TrendFit:
         """Fit an exponential trend to the bound experience by log-linear regression.
 
-        Defaults to the bound ``expense`` (claims) over the bound ``exposure`` -- the PMPM
-        trend -- across the bound ``date``; pass ``value_col`` / ``exposure_col`` to
+        Defaults to the bound ``expense`` (claims) over the bound ``exposure`` -- the
+        per-exposure trend -- across the bound ``date``; pass ``value_col`` / ``exposure_col`` to
         override, or leave the exposure unbound to trend the raw amount. Returns a
         ``TrendFit`` (see :func:`fit_trend`). Run on completed, deseasonalized history.
         """

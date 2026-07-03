@@ -6,8 +6,9 @@ The whole arc in one flow, showing that the pieces compose into a single study:
     -> pool large claimants -> credibility-blend with the manual
     -> load for retention -> indicated rate change
 
-Each step prints the projected claims PMPM as it builds, so the renewal reads as one
-exhibit. Factors (completion, trend, relativities, the manual rate, the pooling charge)
+A health-flavored walkthrough: PMPM (per member per month) is this caller's
+per-exposure label over a domain-agnostic core. Each step prints the projected
+claims PMPM as it builds, so the renewal reads as one exhibit. Factors (completion, trend, relativities, the manual rate, the pooling charge)
 are supplied as inputs -- the library applies them; it does not set them.
 
     pip install actuarialpy
