@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.40.1
+
+### Added
+
+- openpyxl added as a dev dependency.
+
 ## 0.40.0
 
 ### Added
