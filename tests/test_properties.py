@@ -146,3 +146,69 @@ def test_fit_trend_recovers_planted_exponential_trend(g, n):
     assert abs(fit.annual_trend - g) < 1e-6          # exact recovery of a clean exponential
     assert fit.r_squared > 1 - 1e-9
     assert fit.ci_low <= fit.annual_trend <= fit.ci_high
+
+
+# ----- Mack standard errors: invariants over generated triangles ----- #
+from actuarialpy.reserving import ChainLadder  # noqa: E402
+
+
+@st.composite
+def _cumulative_triangles(draw):
+    n = draw(st.integers(min_value=4, max_value=7))
+    base = draw(st.lists(st.floats(min_value=50.0, max_value=5_000.0),
+                         min_size=n, max_size=n))
+    factors = draw(st.lists(st.floats(min_value=1.01, max_value=2.5),
+                            min_size=n - 1, max_size=n - 1))
+    noise = draw(st.lists(st.floats(min_value=0.85, max_value=1.15),
+                          min_size=n * n, max_size=n * n))
+    rows = {}
+    it = iter(noise)
+    for i in range(n):
+        vals = [base[i]]
+        for k in range(n - 1 - i):
+            vals.append(vals[-1] * factors[k] * next(it))
+        rows[i] = vals + [np.nan] * i
+    tri = pd.DataFrame.from_dict(rows, orient="index",
+                                 columns=range(1, n + 1)).astype(float)
+    tri.index.name = "origin"
+    return tri
+
+
+@given(_cumulative_triangles(), st.floats(min_value=0.01, max_value=1000.0))
+@settings(max_examples=40, deadline=None)
+def test_mack_scale_equivariance(tri, scale):
+    cl = ChainLadder.fit(tri)
+    a = cl.mack_standard_errors(tri)
+    scaled = tri * scale
+    b = ChainLadder.fit(scaled).mack_standard_errors(scaled)
+    # atol anchored to the ultimates: degenerate zero-variance triangles
+    # produce se = 0 exactly, and any rescaling by a non-dyadic factor turns
+    # that into a one-ulp positive number -- zero for every purpose
+    atol = 1e-12 * float(b["ultimate"].max())
+    np.testing.assert_allclose(b["se"], a["se"] * scale, rtol=1e-9, atol=atol)
+    np.testing.assert_allclose(b["ultimate"], a["ultimate"] * scale, rtol=1e-9)
+
+
+@given(_cumulative_triangles())
+@settings(max_examples=40, deadline=None)
+def test_mack_origin_order_invariance(tri):
+    cl = ChainLadder.fit(tri)
+    a = cl.mack_standard_errors(tri)
+    shuffled = tri.iloc[::-1]
+    b = ChainLadder.fit(shuffled).mack_standard_errors(shuffled)
+    atol = 1e-12 * float(a["ultimate"].max())
+    np.testing.assert_allclose(b.loc[a.index.drop("Total"), "se"],
+                               a.drop("Total")["se"], rtol=1e-9, atol=atol)
+    np.testing.assert_allclose(b.loc["Total", "se"], a.loc["Total", "se"],
+                               rtol=1e-9, atol=atol)
+
+
+@given(_cumulative_triangles())
+@settings(max_examples=40, deadline=None)
+def test_mack_total_dominates_independent_sum(tri):
+    # total mse = sum(per-origin mse) + a nonnegative estimation-covariance
+    # term, so the total se can never fall below the independence value
+    cl = ChainLadder.fit(tri)
+    out = cl.mack_standard_errors(tri)
+    per_origin = out.drop("Total")["se"].to_numpy()
+    assert out.loc["Total", "se"] >= np.sqrt(np.sum(per_origin**2)) - 1e-9

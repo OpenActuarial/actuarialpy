@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.40.0
+
+### Added
+- **Mack standard errors on the chain ladder.** `ChainLadder.mack_sigma_squared`
+  estimates the development-variance parameters (with Mack's log-linear
+  extrapolation for the final period, where only one link ratio exists), and
+  `ChainLadder.mack_standard_errors` returns per-origin and total reserve
+  standard errors by the distribution-free formulas of Mack (1993) --
+  parameter and process error per origin, plus the cross-origin covariance
+  of shared estimation error in the total. Verified against the published
+  Taylor-Ashe results (total reserve 18,680,856; total s.e. 2,447,095) and
+  an independent transcription of the recursion. The total's
+  cross-origin term is computed pairwise over the development periods
+  unobserved by both origins of each pair, so it is independent of the
+  triangle's row order (property-tested under row reversal; the familiar
+  textbook loop assumes rows sorted most-developed first). Defined for the
+  volume-weighted estimator only (Mack's model *is* that estimator;
+  `method="simple"` refuses rather than reporting errors the assumptions
+  do not support), and a fitted `tail` is treated as deterministic --
+  ultimates and standard errors scale by it exactly, and this is stated in
+  the docstring rather than hidden.
+
 ## 0.39.1
 
 ### Changed

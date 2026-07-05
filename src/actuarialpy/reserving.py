@@ -235,6 +235,172 @@ class ChainLadder:
         return pd.DataFrame.from_records(records, index=pd.Index(origins, name=tri.index.name))
 
 
+    def mack_sigma_squared(self, triangle: pd.DataFrame) -> pd.Series:
+        r"""Mack's variance parameters :math:`\sigma_k^2` per development period.
+
+        The chain-ladder variance assumption is
+        :math:`\mathrm{Var}(C_{i,k+1} \mid C_{i,k}) = \sigma_k^2\, C_{i,k}`;
+        the unbiased estimator (Mack, 1993) is
+
+        .. math::
+            \hat\sigma_k^2 = \frac{1}{n_k - 1} \sum_i C_{i,k}
+                \left( \frac{C_{i,k+1}}{C_{i,k}} - \hat f_k \right)^2 .
+
+        The final development period has only one observed link ratio, so
+        its :math:`\sigma^2` cannot be estimated; Mack's log-linear
+        extrapolation is used:
+        :math:`\hat\sigma_{K-1}^2 = \min(\hat\sigma_{K-2}^4 / \hat\sigma_{K-3}^2,
+        \min(\hat\sigma_{K-3}^2, \hat\sigma_{K-2}^2))`.
+
+        Only defined for ``method="volume"`` -- Mack's model *is* the
+        volume-weighted estimator; the assumptions do not describe the
+        simple-average factors.
+        """
+        if self.method != "volume":
+            raise ValueError(
+                "Mack standard errors are defined for the volume-weighted "
+                "chain ladder only (method='volume'); the variance model "
+                "does not describe simple-average factors"
+            )
+        tri = triangle.sort_index(axis=1)
+        cols = list(tri.columns)
+        if list(self.age_to_age.index) != cols[:-1]:
+            raise ValueError(
+                "triangle development periods do not match the fitted pattern; "
+                "pass the same triangle the pattern was fit on"
+            )
+        sig2: dict[object, float] = {}
+        for start, end in zip(cols[:-1], cols[1:], strict=True):
+            pair = tri[[start, end]].dropna()
+            n_k = len(pair)
+            f_k = float(self.age_to_age[start])
+            if n_k >= 2:
+                ratios = pair[end] / pair[start]
+                sig2[start] = float(
+                    (pair[start] * (ratios - f_k) ** 2).sum() / (n_k - 1)
+                )
+            elif start == cols[-2] and len(cols) >= 4:
+                s_prev = sig2[cols[-3]]
+                s_prev2 = sig2[cols[-4]]
+                if s_prev2 > 0:
+                    sig2[start] = float(
+                        min(s_prev**2 / s_prev2, min(s_prev2, s_prev))
+                    )
+                else:
+                    sig2[start] = 0.0
+            elif start == cols[-2]:
+                # triangle too small to extrapolate; conservative fallback
+                sig2[start] = sig2.get(cols[-3], 0.0)
+            else:
+                raise ValueError(
+                    f"only one observed link ratio for interior development "
+                    f"period {start!r}; Mack variance cannot be estimated "
+                    "(triangle too thin)"
+                )
+        return pd.Series(sig2, name="sigma_squared").reindex(cols[:-1])
+
+    def mack_standard_errors(self, triangle: pd.DataFrame) -> pd.DataFrame:
+        r"""Per-origin and total reserve standard errors (Mack, 1993).
+
+        The distribution-free chain-ladder mean squared error: for origin
+        ``i`` with ultimate :math:`\hat C_{iK}`,
+
+        .. math::
+            \widehat{\mathrm{mse}}_i = \hat C_{iK}^2 \sum_k
+                \frac{\hat\sigma_k^2}{\hat f_k^2}
+                \left( \frac{1}{\hat C_{ik}} + \frac{1}{S_k} \right),
+
+        summing over the unobserved development periods, with :math:`S_k`
+        the column sum entering :math:`\hat f_k`; the total adds Mack's
+        cross-origin covariance term (estimation error is shared, process
+        error is not), computed pairwise over the development periods
+        unobserved by both origins of each pair, so the result does not
+        depend on the triangle's row order.
+
+        Returns one row per origin plus ``"Total"``: ``latest``,
+        ``ultimate``, ``ibnr``, ``se``, ``cv`` (``se / ibnr``). ``se`` is
+        conditional on the fitted tail -- a ``tail`` factor beyond the
+        triangle carries no estimated variance and is treated as
+        deterministic (stated here rather than hidden).
+        """
+        tri = triangle.sort_index(axis=1)
+        cols = list(tri.columns)
+        sig2 = self.mack_sigma_squared(tri)
+        f = self.age_to_age
+        # S_k: the denominator of the volume-weighted factor at k
+        s_k: dict[object, float] = {}
+        for start, end in zip(cols[:-1], cols[1:], strict=True):
+            pair = tri[[start, end]].dropna()
+            s_k[start] = float(pair[start].sum())
+
+        proj = self.project(tri)
+        origins = list(proj.index)
+        # forward-fill each origin's projected path C_hat at every period
+        paths: dict[object, dict[object, float]] = {}
+        for origin in origins:
+            observed = tri.loc[origin].dropna()
+            latest_dev = max(observed.index)
+            path = {dev: float(observed[dev]) for dev in observed.index}
+            running = float(observed[latest_dev])
+            started = False
+            for start in cols[:-1]:
+                if start == latest_dev:
+                    started = True
+                if started:
+                    running = running * float(f[start])
+                    end = cols[cols.index(start) + 1]
+                    path[end] = running
+            paths[origin] = path
+
+        mse: dict[object, float] = {}
+        for origin in origins:
+            observed = tri.loc[origin].dropna()
+            latest_dev = max(observed.index)
+            start_idx = cols.index(latest_dev)
+            ult = float(proj.loc[origin, "ultimate"])
+            total = 0.0
+            for start in cols[start_idx:-1]:
+                total += (sig2[start] / f[start] ** 2) * (
+                    1.0 / paths[origin][start] + 1.0 / s_k[start]
+                )
+            mse[origin] = ult**2 * total
+
+        # total mse: sum of per-origin terms plus the pairwise estimation
+        # covariance. For each origin pair the shared-f_k covariance runs
+        # over the development periods unobserved by *both* origins, i.e.
+        # from max(latest_i, latest_j) -- computed pairwise so the result
+        # is independent of the triangle's row order (with rows sorted
+        # most-developed first this reduces to the familiar textbook loop)
+        total_mse = float(sum(mse.values()))
+        h = [2.0 * sig2[c] / (f[c] ** 2 * s_k[c]) for c in cols[:-1]]
+        suffix = np.concatenate([np.cumsum(h[::-1])[::-1], [0.0]])
+        start_idx = {
+            origin: cols.index(max(tri.loc[origin].dropna().index))
+            for origin in origins
+        }
+        ults = {origin: float(proj.loc[origin, "ultimate"]) for origin in origins}
+        for a_pos, oi in enumerate(origins):
+            for oj in origins[a_pos + 1 :]:
+                k0 = max(start_idx[oi], start_idx[oj])
+                total_mse += ults[oi] * ults[oj] * float(suffix[k0])
+
+        out = proj[["latest", "ultimate", "ibnr"]].copy()
+        out["se"] = np.sqrt(pd.Series(mse).reindex(out.index).to_numpy())
+        totals = pd.DataFrame(
+            {
+                "latest": [out["latest"].sum()],
+                "ultimate": [out["ultimate"].sum()],
+                "ibnr": [out["ibnr"].sum()],
+                "se": [np.sqrt(total_mse)],
+            },
+            index=pd.Index(["Total"], name=out.index.name),
+        )
+        out = pd.concat([out, totals])
+        with np.errstate(divide="ignore", invalid="ignore"):
+            out["cv"] = np.where(out["ibnr"] > 0, out["se"] / out["ibnr"], np.nan)
+        return out
+
+
 def completion_factors(triangle: pd.DataFrame, *, method: str = "volume", tail: float = 1.0) -> pd.Series:
     """Completion factors by development period, via chain-ladder.
 

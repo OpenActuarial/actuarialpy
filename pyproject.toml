@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "actuarialpy"
-version = "0.39.1"
+version = "0.40.0"
 description = "Experience analysis and shared actuarial primitives: credibility, trend, completion, seasonality, financial mathematics, and underwriting margin on tidy tables."
 readme = "README.md"
 requires-python = ">=3.10"
