@@ -1,5 +1,7 @@
 # actuarialpy
 
+[![CI](https://github.com/OpenActuarial/actuarialpy/actions/workflows/ci.yml/badge.svg)](https://github.com/OpenActuarial/actuarialpy/actions/workflows/ci.yml) [![PyPI](https://img.shields.io/pypi/v/actuarialpy)](https://pypi.org/project/actuarialpy/)
+
 Standard actuarial analyses on claims, exposure, and premium data: loss ratios and per-exposure rates,
 development triangles and IBNR, trend, credibility, seasonality, and frequency-severity
 decomposition, computed from long, transactional tables. The only dependencies are `numpy`

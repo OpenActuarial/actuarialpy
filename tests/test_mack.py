@@ -235,8 +235,12 @@ def test_mack_calibration_under_the_models_own_generator():
             mean, var = f_true[k] * c, sig2_true[k] * c
             shape = mean**2 / var
             full[:, k + 1] = rng.gamma(shape, var / mean)
-        tri = pd.DataFrame(full, index=pd.Index(range(n_origins),
-                                                name="origin"),
+        # capture the truth BEFORE building the triangle: the DataFrame can
+        # view the ndarray, so masking the frame would write NaN straight
+        # into the actual ultimates being tested against
+        actual_ult = full[:, -1].copy()
+        tri = pd.DataFrame(full.copy(),
+                           index=pd.Index(range(n_origins), name="origin"),
                            columns=range(1, n_dev + 1))
         for i in range(n_origins - n_dev + 1, n_origins):
             tri.iloc[i, n_origins - i:] = np.nan
@@ -244,7 +248,7 @@ def test_mack_calibration_under_the_models_own_generator():
         out = cl.mack_standard_errors(tri)
         for i in range(n_origins - n_dev + 1, n_origins):
             if out.loc[i, "se"] > 0:
-                zs.append((full[i, -1] - out.loc[i, "ultimate"])
+                zs.append((actual_ult[i] - out.loc[i, "ultimate"])
                           / out.loc[i, "se"])
     zs = np.asarray(zs)
     assert abs(zs.mean()) < 0.15, zs.mean()
