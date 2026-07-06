@@ -13,7 +13,7 @@ the force of interest. Nominal rates convertible ``m`` times per year are
 """
 from __future__ import annotations
 
-from typing import Sequence
+from typing import Any, Sequence
 
 import numpy as np
 import pandas as pd
@@ -22,69 +22,165 @@ DateLike = object
 
 
 # --------------------------------------------------------------------------- #
-# interest-rate fundamentals and conversions
+# scalar / array-aware helpers
+#
+# The element-wise time-value functions below (rate conversions, discount and
+# accumulation factors, present/future value, and the closed-form annuities)
+# follow the same type-mirroring contract as the metric primitives: a scalar
+# rate returns a Python ``float``, while a NumPy array or pandas Series returns
+# a NumPy array or pandas Series with the index (and name) preserved, so a
+# per-row or per-scenario rate column produces a result you can assign straight
+# back onto the source frame. The genuine reductions (NPV, IRR, and the
+# spot-curve present value) still take a sequence of cash flows and return a
+# scalar, and the amortization schedule and day-count helpers remain scalar-
+# structured, since none of those is an element-wise map over a rate.
 # --------------------------------------------------------------------------- #
-def _check_rate(i: float) -> float:
-    i = float(i)
-    if i <= -1.0:
+def _is_pandas(obj: Any) -> bool:
+    return isinstance(obj, (pd.Series, pd.DataFrame))
+
+
+def _as_float_scalar_or_array(x: Any):
+    """Coerce to a float scalar or a float array, preserving a pandas index.
+
+    Returns a triple ``(values, is_scalar, wrap)``. ``values`` is a Python
+    ``float`` when ``x`` is scalar, otherwise a float NumPy array of the
+    underlying values. ``wrap`` re-attaches a pandas Series wrapper (index and
+    name) when ``x`` was pandas, and is the identity otherwise -- callers apply
+    it to the computed result so scalar-in stays scalar-out and Series-in stays
+    Series-out.
+    """
+    if _is_pandas(x):
+        series = x if isinstance(x, pd.Series) else x.squeeze()
+        values = np.asarray(series, dtype=float)
+        index, name = series.index, series.name
+
+        def wrap(result):
+            return pd.Series(np.asarray(result, dtype=float), index=index, name=name)
+
+        return values, False, wrap
+    if isinstance(x, (int, float, np.number)):
+        return float(x), True, (lambda result: float(result))
+    values = np.asarray(x, dtype=float)
+
+    def wrap(result):
+        return np.asarray(result, dtype=float)
+
+    return values, False, wrap
+
+
+def _check_rate(i: Any):
+    """Validate an effective rate, scalar or array-like, and return floats.
+
+    Mirrors the scalar contract (``i`` must exceed -1) element-wise: an array
+    or Series with any entry at or below -1 raises, matching the scalar error.
+    """
+    values, is_scalar, _ = _as_float_scalar_or_array(i)
+    if is_scalar:
+        if values <= -1.0:
+            raise ValueError("the effective rate i must exceed -1.")
+    elif np.any(values <= -1.0):
         raise ValueError("the effective rate i must exceed -1.")
-    return i
+    return values
 
 
-def discount_factor(i: float, t: float = 1.0) -> float:
-    r"""Discount factor :math:`v^t = (1+i)^{-t}`."""
-    return float((1.0 + _check_rate(i)) ** (-float(t)))
+def discount_factor(i: Any, t: float = 1.0) -> Any:
+    r"""Discount factor :math:`v^t = (1+i)^{-t}`.
+
+    Accepts a scalar rate, a NumPy array, or a pandas Series and returns the
+    same kind (a Series keeps its index and name), so a column of rates maps to
+    a column of factors.
+    """
+    values, _, wrap = _as_float_scalar_or_array(i)
+    _check_rate(i)
+    return wrap((1.0 + values) ** (-float(t)))
 
 
-def accumulation_factor(i: float, t: float = 1.0) -> float:
-    r"""Accumulation factor :math:`(1+i)^t`."""
-    return float((1.0 + _check_rate(i)) ** float(t))
+def accumulation_factor(i: Any, t: float = 1.0) -> Any:
+    r"""Accumulation factor :math:`(1+i)^t`.
+
+    Scalar in, scalar out; array or Series in, same out (index preserved).
+    """
+    values, _, wrap = _as_float_scalar_or_array(i)
+    _check_rate(i)
+    return wrap((1.0 + values) ** float(t))
 
 
-def effective_discount(i: float) -> float:
-    r"""Effective rate of discount :math:`d = i/(1+i) = 1 - v`."""
-    i = _check_rate(i)
-    return float(i / (1.0 + i))
+def effective_discount(i: Any) -> Any:
+    r"""Effective rate of discount :math:`d = i/(1+i) = 1 - v`.
+
+    Scalar in, scalar out; array or Series in, same out (index preserved).
+    """
+    values = _check_rate(i)
+    _, _, wrap = _as_float_scalar_or_array(i)
+    return wrap(values / (1.0 + values))
 
 
-def force_of_interest(i: float) -> float:
-    r"""Force of interest :math:`\delta = \ln(1+i)`."""
-    return float(np.log1p(_check_rate(i)))
+def force_of_interest(i: Any) -> Any:
+    r"""Force of interest :math:`\delta = \ln(1+i)`.
+
+    Scalar in, scalar out; array or Series in, same out (index preserved).
+    """
+    values = _check_rate(i)
+    _, _, wrap = _as_float_scalar_or_array(i)
+    return wrap(np.log1p(values))
 
 
-def rate_from_force(delta: float) -> float:
-    r"""Effective rate from the force of interest: :math:`i = e^\delta - 1`."""
-    return float(np.expm1(float(delta)))
+def rate_from_force(delta: Any) -> Any:
+    r"""Effective rate from the force of interest: :math:`i = e^\delta - 1`.
+
+    Scalar in, scalar out; array or Series in, same out (index preserved).
+    """
+    values, _, wrap = _as_float_scalar_or_array(delta)
+    return wrap(np.expm1(values))
 
 
-def nominal_interest(i: float, m: int) -> float:
-    r"""Nominal interest convertible ``m`` times: :math:`i^{(m)} = m[(1+i)^{1/m}-1]`."""
+def nominal_interest(i: Any, m: int) -> Any:
+    r"""Nominal interest convertible ``m`` times: :math:`i^{(m)} = m[(1+i)^{1/m}-1]`.
+
+    Scalar in, scalar out; array or Series in, same out (index preserved).
+    """
     m = _check_periods(m)
-    i = _check_rate(i)
-    return float(m * ((1.0 + i) ** (1.0 / m) - 1.0))
+    values = _check_rate(i)
+    _, _, wrap = _as_float_scalar_or_array(i)
+    return wrap(m * ((1.0 + values) ** (1.0 / m) - 1.0))
 
 
-def nominal_discount(i: float, m: int) -> float:
-    r"""Nominal discount convertible ``m`` times: :math:`d^{(m)} = m[1-v^{1/m}]`."""
+def nominal_discount(i: Any, m: int) -> Any:
+    r"""Nominal discount convertible ``m`` times: :math:`d^{(m)} = m[1-v^{1/m}]`.
+
+    Scalar in, scalar out; array or Series in, same out (index preserved).
+    """
     m = _check_periods(m)
-    i = _check_rate(i)
-    v = 1.0 / (1.0 + i)
-    return float(m * (1.0 - v ** (1.0 / m)))
+    values = _check_rate(i)
+    _, _, wrap = _as_float_scalar_or_array(i)
+    v = 1.0 / (1.0 + values)
+    return wrap(m * (1.0 - v ** (1.0 / m)))
 
 
-def rate_from_nominal_interest(nominal: float, m: int) -> float:
-    r"""Effective rate from a nominal interest rate: :math:`(1+i^{(m)}/m)^m - 1`."""
+def rate_from_nominal_interest(nominal: Any, m: int) -> Any:
+    r"""Effective rate from a nominal interest rate: :math:`(1+i^{(m)}/m)^m - 1`.
+
+    Scalar in, scalar out; array or Series in, same out (index preserved).
+    """
     m = _check_periods(m)
-    return float((1.0 + float(nominal) / m) ** m - 1.0)
+    values, _, wrap = _as_float_scalar_or_array(nominal)
+    return wrap((1.0 + values / m) ** m - 1.0)
 
 
-def rate_from_nominal_discount(nominal: float, m: int) -> float:
-    r"""Effective rate from a nominal discount rate: :math:`(1-d^{(m)}/m)^{-m} - 1`."""
+def rate_from_nominal_discount(nominal: Any, m: int) -> Any:
+    r"""Effective rate from a nominal discount rate: :math:`(1-d^{(m)}/m)^{-m} - 1`.
+
+    Scalar in, scalar out; array or Series in, same out (index preserved).
+    """
     m = _check_periods(m)
-    base = 1.0 - float(nominal) / m
-    if base <= 0:
+    values, is_scalar, wrap = _as_float_scalar_or_array(nominal)
+    base = 1.0 - values / m
+    if is_scalar:
+        if base <= 0:
+            raise ValueError("nominal discount too large for the given m.")
+    elif np.any(base <= 0):
         raise ValueError("nominal discount too large for the given m.")
-    return float(base ** (-m) - 1.0)
+    return wrap(base ** (-m) - 1.0)
 
 
 def _check_periods(m: int) -> int:
@@ -97,139 +193,244 @@ def _check_periods(m: int) -> int:
 # --------------------------------------------------------------------------- #
 # present and future value
 # --------------------------------------------------------------------------- #
-def present_value(amount: float, i: float, t: float) -> float:
-    """Present value of a single ``amount`` due in ``t`` years."""
-    return float(amount) * discount_factor(i, t)
+def present_value(amount: Any, i: Any, t: float) -> Any:
+    """Present value of a single ``amount`` due in ``t`` years.
+
+    ``amount`` and ``i`` may be scalars, arrays, or pandas Series and broadcast
+    together; a pandas operand carries its index (and name) to the result.
+    """
+    return amount * discount_factor(i, t)
 
 
-def future_value(amount: float, i: float, t: float) -> float:
-    """Accumulated value of a single ``amount`` after ``t`` years."""
-    return float(amount) * accumulation_factor(i, t)
+def future_value(amount: Any, i: Any, t: float) -> Any:
+    """Accumulated value of a single ``amount`` after ``t`` years.
+
+    ``amount`` and ``i`` may be scalars, arrays, or pandas Series and broadcast
+    together; a pandas operand carries its index (and name) to the result.
+    """
+    return amount * accumulation_factor(i, t)
 
 
 # --------------------------------------------------------------------------- #
 # annuities-certain
 # --------------------------------------------------------------------------- #
-def annuity_immediate(i: float, n: int) -> float:
-    r"""Present value of an annuity-immediate :math:`a_{\overline{n}|}=(1-v^n)/i`."""
-    i = _check_rate(i)
+def annuity_immediate(i: Any, n: int) -> Any:
+    r"""Present value of an annuity-immediate :math:`a_{\overline{n}|}=(1-v^n)/i`.
+
+    Accepts a scalar rate, array, or pandas Series and returns the same kind
+    (a Series keeps its index and name). The :math:`i = 0` limit evaluates to
+    ``n`` element-wise.
+    """
+    values = _check_rate(i)
     n = _check_term(n)
-    if i == 0:
-        return float(n)
-    v = 1.0 / (1.0 + i)
-    return float((1.0 - v**n) / i)
+    _, is_scalar, wrap = _as_float_scalar_or_array(i)
+    if is_scalar:
+        return wrap(float(n) if values == 0 else (1.0 - (1.0 / (1.0 + values)) ** n) / values)
+    safe = np.where(values == 0, 1.0, values)  # avoid divide-by-zero warning at i==0
+    v = 1.0 / (1.0 + values)
+    result = np.where(values == 0, float(n), (1.0 - v**n) / safe)
+    return wrap(result)
 
 
-def annuity_due(i: float, n: int) -> float:
-    r"""Present value of an annuity-due :math:`\ddot a_{\overline{n}|}=(1-v^n)/d`."""
-    i = _check_rate(i)
+def annuity_due(i: Any, n: int) -> Any:
+    r"""Present value of an annuity-due :math:`\ddot a_{\overline{n}|}=(1-v^n)/d`.
+
+    Scalar in, scalar out; array or Series in, same out (index preserved).
+    The :math:`i = 0` limit evaluates to ``n`` element-wise.
+    """
+    values = _check_rate(i)
     n = _check_term(n)
-    if i == 0:
-        return float(n)
-    return float(annuity_immediate(i, n) * (1.0 + i))
+    _, is_scalar, wrap = _as_float_scalar_or_array(i)
+    imm = np.asarray(annuity_immediate(np.asarray(values), n)) if not is_scalar else annuity_immediate(values, n)
+    if is_scalar:
+        return wrap(float(n) if values == 0 else imm * (1.0 + values))
+    return wrap(np.where(values == 0, float(n), imm * (1.0 + values)))
 
 
-def accumulated_immediate(i: float, n: int) -> float:
-    r"""Accumulated value of an annuity-immediate :math:`s_{\overline{n}|}`."""
-    i = _check_rate(i)
+def accumulated_immediate(i: Any, n: int) -> Any:
+    r"""Accumulated value of an annuity-immediate :math:`s_{\overline{n}|}`.
+
+    Scalar in, scalar out; array or Series in, same out (index preserved).
+    The :math:`i = 0` limit evaluates to ``n`` element-wise.
+    """
+    values = _check_rate(i)
     n = _check_term(n)
-    if i == 0:
-        return float(n)
-    return float(((1.0 + i) ** n - 1.0) / i)
+    _, is_scalar, wrap = _as_float_scalar_or_array(i)
+    if is_scalar:
+        return wrap(float(n) if values == 0 else ((1.0 + values) ** n - 1.0) / values)
+    safe = np.where(values == 0, 1.0, values)
+    result = np.where(values == 0, float(n), ((1.0 + values) ** n - 1.0) / safe)
+    return wrap(result)
 
 
-def accumulated_due(i: float, n: int) -> float:
-    r"""Accumulated value of an annuity-due :math:`\ddot s_{\overline{n}|}`."""
-    i = _check_rate(i)
+def accumulated_due(i: Any, n: int) -> Any:
+    r"""Accumulated value of an annuity-due :math:`\ddot s_{\overline{n}|}`.
+
+    Scalar in, scalar out; array or Series in, same out (index preserved).
+    The :math:`i = 0` limit evaluates to ``n`` element-wise.
+    """
+    values = _check_rate(i)
     n = _check_term(n)
-    if i == 0:
-        return float(n)
-    return float(accumulated_immediate(i, n) * (1.0 + i))
+    _, is_scalar, wrap = _as_float_scalar_or_array(i)
+    acc = np.asarray(accumulated_immediate(np.asarray(values), n)) if not is_scalar else accumulated_immediate(values, n)
+    if is_scalar:
+        return wrap(float(n) if values == 0 else acc * (1.0 + values))
+    return wrap(np.where(values == 0, float(n), acc * (1.0 + values)))
 
 
-def perpetuity_immediate(i: float) -> float:
-    r"""Present value of a perpetuity-immediate :math:`1/i`."""
-    i = _check_rate(i)
-    if i <= 0:
+def perpetuity_immediate(i: Any) -> Any:
+    r"""Present value of a perpetuity-immediate :math:`1/i`.
+
+    Requires ``i > 0`` (element-wise for array or Series input). Scalar in,
+    scalar out; array or Series in, same out (index preserved).
+    """
+    values = _check_rate(i)
+    _, is_scalar, wrap = _as_float_scalar_or_array(i)
+    if is_scalar:
+        if values <= 0:
+            raise ValueError("a perpetuity requires i > 0.")
+    elif np.any(values <= 0):
         raise ValueError("a perpetuity requires i > 0.")
-    return float(1.0 / i)
+    return wrap(1.0 / values)
 
 
-def perpetuity_due(i: float) -> float:
-    r"""Present value of a perpetuity-due :math:`1/d`."""
-    i = _check_rate(i)
-    if i <= 0:
+def perpetuity_due(i: Any) -> Any:
+    r"""Present value of a perpetuity-due :math:`1/d`.
+
+    Requires ``i > 0`` (element-wise for array or Series input). Scalar in,
+    scalar out; array or Series in, same out (index preserved).
+    """
+    values = _check_rate(i)
+    _, is_scalar, wrap = _as_float_scalar_or_array(i)
+    if is_scalar:
+        if values <= 0:
+            raise ValueError("a perpetuity requires i > 0.")
+    elif np.any(values <= 0):
         raise ValueError("a perpetuity requires i > 0.")
-    return float(1.0 / effective_discount(i))
+    return wrap((1.0 + values) / values)
 
 
-def deferred_annuity_immediate(i: float, n: int, defer: int) -> float:
-    r"""Present value of an ``n``-year annuity-immediate deferred ``defer`` years."""
+def deferred_annuity_immediate(i: Any, n: int, defer: int) -> Any:
+    r"""Present value of an ``n``-year annuity-immediate deferred ``defer`` years.
+
+    Scalar in, scalar out; array or Series in, same out (index preserved).
+    """
     if defer < 0:
         raise ValueError("defer must be non-negative.")
-    return float(discount_factor(i, defer) * annuity_immediate(i, n))
+    return discount_factor(i, defer) * annuity_immediate(i, n)
 
 
-def annuity_continuous(i: float, n: int) -> float:
-    r"""Present value of a continuous annuity :math:`\bar a_{\overline{n}|}=(1-v^n)/\delta`."""
-    i = _check_rate(i)
+def annuity_continuous(i: Any, n: int) -> Any:
+    r"""Present value of a continuous annuity :math:`\bar a_{\overline{n}|}=(1-v^n)/\delta`.
+
+    Scalar in, scalar out; array or Series in, same out (index preserved).
+    The :math:`i = 0` limit evaluates to ``n`` element-wise.
+    """
+    values = _check_rate(i)
     n = _check_term(n)
-    if i == 0:
-        return float(n)
-    v = 1.0 / (1.0 + i)
-    return float((1.0 - v**n) / force_of_interest(i))
+    _, is_scalar, wrap = _as_float_scalar_or_array(i)
+    if is_scalar:
+        if values == 0:
+            return wrap(float(n))
+        v = 1.0 / (1.0 + values)
+        return wrap((1.0 - v**n) / np.log1p(values))
+    safe = np.where(values == 0, 1.0, values)  # placeholder to keep log1p finite/nonzero
+    v = 1.0 / (1.0 + values)
+    delta = np.log1p(safe)
+    result = np.where(values == 0, float(n), (1.0 - v**n) / delta)
+    return wrap(result)
 
 
-def annuity_immediate_mthly(i: float, n: int, m: int) -> float:
-    r"""Present value of an ``m``-thly annuity-immediate :math:`a^{(m)}_{\overline{n}|}`."""
-    i = _check_rate(i)
+def annuity_immediate_mthly(i: Any, n: int, m: int) -> Any:
+    r"""Present value of an ``m``-thly annuity-immediate :math:`a^{(m)}_{\overline{n}|}`.
+
+    Scalar in, scalar out; array or Series in, same out (index preserved).
+    The :math:`i = 0` limit evaluates to ``n`` element-wise.
+    """
+    values = _check_rate(i)
     n = _check_term(n)
-    if i == 0:
-        return float(n)
-    v = 1.0 / (1.0 + i)
-    return float((1.0 - v**n) / nominal_interest(i, m))
+    _, is_scalar, wrap = _as_float_scalar_or_array(i)
+    if is_scalar:
+        if values == 0:
+            return wrap(float(n))
+        v = 1.0 / (1.0 + values)
+        return wrap((1.0 - v**n) / nominal_interest(values, m))
+    safe = np.where(values == 0, 1.0, values)
+    v = 1.0 / (1.0 + values)
+    im = np.asarray(nominal_interest(np.asarray(safe), m))
+    result = np.where(values == 0, float(n), (1.0 - v**n) / im)
+    return wrap(result)
 
 
-def increasing_annuity_immediate(i: float, n: int) -> float:
+def increasing_annuity_immediate(i: Any, n: int) -> Any:
     r"""Present value of an increasing annuity :math:`(Ia)_{\overline{n}|}`.
 
-    Payments of 1, 2, ..., n at times 1, ..., n.
+    Payments of 1, 2, ..., n at times 1, ..., n. Scalar in, scalar out; array
+    or Series in, same out (index preserved). The :math:`i = 0` limit evaluates
+    to :math:`n(n+1)/2` element-wise.
     """
-    i = _check_rate(i)
+    values = _check_rate(i)
     n = _check_term(n)
-    if i == 0:
-        return float(n * (n + 1) / 2)
-    v = 1.0 / (1.0 + i)
-    return float((annuity_due(i, n) - n * v**n) / i)
+    _, is_scalar, wrap = _as_float_scalar_or_array(i)
+    zero_limit = float(n * (n + 1) / 2)
+    if is_scalar:
+        if values == 0:
+            return wrap(zero_limit)
+        v = 1.0 / (1.0 + values)
+        return wrap((annuity_due(values, n) - n * v**n) / values)
+    safe = np.where(values == 0, 1.0, values)
+    v = 1.0 / (1.0 + values)
+    due = np.asarray(annuity_due(np.asarray(values), n))
+    result = np.where(values == 0, zero_limit, (due - n * v**n) / safe)
+    return wrap(result)
 
 
-def decreasing_annuity_immediate(i: float, n: int) -> float:
+def decreasing_annuity_immediate(i: Any, n: int) -> Any:
     r"""Present value of a decreasing annuity :math:`(Da)_{\overline{n}|}`.
 
-    Payments of n, n-1, ..., 1 at times 1, ..., n.
+    Payments of n, n-1, ..., 1 at times 1, ..., n. Scalar in, scalar out; array
+    or Series in, same out (index preserved). The :math:`i = 0` limit evaluates
+    to :math:`n(n+1)/2` element-wise.
     """
-    i = _check_rate(i)
+    values = _check_rate(i)
     n = _check_term(n)
-    if i == 0:
-        return float(n * (n + 1) / 2)
-    return float((n - annuity_immediate(i, n)) / i)
+    _, is_scalar, wrap = _as_float_scalar_or_array(i)
+    zero_limit = float(n * (n + 1) / 2)
+    if is_scalar:
+        if values == 0:
+            return wrap(zero_limit)
+        return wrap((n - annuity_immediate(values, n)) / values)
+    safe = np.where(values == 0, 1.0, values)
+    imm = np.asarray(annuity_immediate(np.asarray(values), n))
+    result = np.where(values == 0, zero_limit, (n - imm) / safe)
+    return wrap(result)
 
 
-def geometric_annuity_immediate(i: float, n: int, growth: float) -> float:
+def geometric_annuity_immediate(i: Any, n: int, growth: float) -> Any:
     r"""Present value of a geometrically increasing annuity-immediate.
 
     Payments :math:`1, (1+g), (1+g)^2, \ldots` at times :math:`1, \ldots, n`:
 
     .. math::
         \frac{1 - \left(\frac{1+g}{1+i}\right)^n}{i - g}, \qquad i \neq g.
+
+    Scalar in, scalar out; array or Series in, same out (index preserved). The
+    :math:`i = g` limit evaluates to :math:`n/(1+i)` element-wise.
     """
-    i = _check_rate(i)
+    values = _check_rate(i)
     n = _check_term(n)
     g = float(growth)
-    if abs(i - g) < 1e-15:
-        return float(n / (1.0 + i))
-    ratio = (1.0 + g) / (1.0 + i)
-    return float((1.0 - ratio**n) / (i - g))
+    _, is_scalar, wrap = _as_float_scalar_or_array(i)
+    if is_scalar:
+        if abs(values - g) < 1e-15:
+            return wrap(float(n / (1.0 + values)))
+        ratio = (1.0 + g) / (1.0 + values)
+        return wrap((1.0 - ratio**n) / (values - g))
+    at_limit = np.abs(values - g) < 1e-15
+    safe = np.where(at_limit, 1.0, values - g)  # avoid divide-by-zero at i==g
+    ratio = (1.0 + g) / (1.0 + values)
+    result = np.where(at_limit, n / (1.0 + values), (1.0 - ratio**n) / safe)
+    return wrap(result)
 
 
 def _check_term(n: int) -> int:
@@ -308,24 +509,32 @@ def internal_rate_of_return(
 # --------------------------------------------------------------------------- #
 # loans and amortization
 # --------------------------------------------------------------------------- #
-def level_payment(principal: float, i: float, n: int) -> float:
+def level_payment(principal: Any, i: Any, n: int) -> Any:
     r"""Level payment amortizing ``principal`` over ``n`` periods at rate ``i``.
 
-    :math:`P = L / a_{\overline{n}|}`.
+    :math:`P = L / a_{\overline{n}|}`. ``principal`` and ``i`` may be scalars,
+    arrays, or pandas Series and broadcast together; a pandas operand carries
+    its index (and name) to the result.
     """
-    principal = float(principal)
+    _, is_scalar, _ = _as_float_scalar_or_array(i)
     a = annuity_immediate(i, n)
-    if a == 0:
+    if is_scalar and a == 0:
         raise ValueError("cannot amortize over zero periods.")
-    return float(principal / a)
+    if not is_scalar and np.any(np.asarray(a) == 0):
+        raise ValueError("cannot amortize over zero periods.")
+    return principal / a
 
 
-def outstanding_balance(principal: float, i: float, n: int, t: int) -> float:
-    """Prospective outstanding loan balance just after the ``t``-th payment."""
+def outstanding_balance(principal: Any, i: Any, n: int, t: int) -> Any:
+    """Prospective outstanding loan balance just after the ``t``-th payment.
+
+    ``principal`` and ``i`` may be scalars, arrays, or pandas Series and
+    broadcast together; a pandas operand carries its index (and name) through.
+    """
     if not 0 <= t <= n:
         raise ValueError("t must be between 0 and n.")
     payment = level_payment(principal, i, n)
-    return float(payment * annuity_immediate(i, n - t))
+    return payment * annuity_immediate(i, n - t)
 
 
 def amortization_schedule(

@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.41.0
+
+### Changed
+
+- TVM accepts multiple inputs and outputs multiple outputs.
+
+### Added
+
+- TVM vectorization tests.
+
 ## 0.40.1
 
 ### Added
@@ -9,6 +19,7 @@
 ## 0.40.0
 
 ### Added
+
 - **Mack standard errors on the chain ladder.** `ChainLadder.mack_sigma_squared`
   estimates the development-variance parameters (with Mack's log-linear
   extrapolation for the final period, where only one link ratio exists), and

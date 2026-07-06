@@ -21,6 +21,7 @@ and `pandas`, and every result is a DataFrame or Series.
 - [Adjustments and restatement](#adjustments-and-restatement)
 - [Actual versus forecast](#actual-versus-forecast)
 - [Credibility](#credibility)
+- [Financial mathematics (time value of money)](#financial-mathematics-time-value-of-money)
 - [Lifecycle, pooling, banding, margins](#lifecycle-pooling-banding-margins)
 - [Underwriting summary and weighted rollups](#underwriting-summary-and-weighted-rollups)
 - [Reporting](#reporting)
@@ -377,6 +378,97 @@ n_full = full_credibility_claims(confidence=0.90, tolerance=0.05)   # ~1082 clai
 
 `Buhlmann(overall_mean, epv, vhm, n_obs)` and `BuhlmannStraub(...)` can also be constructed
 directly when EPV and VHM are already known.
+
+## Financial mathematics (time value of money)
+
+The interest-theory primitives every reserve, premium, and valuation depends on:
+interest-rate fundamentals and their conversions, present and accumulated values,
+annuities-certain, cash-flow analysis (NPV/IRR), loan amortization, discounting against a
+spot curve, and day-count year fractions. With `i` the effective annual rate,
+`v = 1/(1+i)` is the discount factor, `d = i/(1+i)` the effective rate of discount, and
+`δ = ln(1+i)` the force of interest.
+
+The element-wise functions follow the same type contract as the [ratio and per-exposure
+metrics](#ratios-and-per-exposure-metrics): a scalar rate returns a `float`, and a NumPy
+array or pandas Series returns the same kind, with the index and name preserved — so a
+per-scenario or per-period rate column maps straight to a result column you can assign back:
+
+```python
+import actuarialpy as ap
+import pandas as pd
+
+ap.discount_factor(0.05, 10)        # 0.6139…  — scalar in, scalar out
+ap.annuity_immediate(0.05, 20)      # 12.4622… — a-angle-n at 5% for 20 years
+
+# a rate curve (or scenario set) → a column of factors, index preserved
+scenarios = pd.DataFrame({"rate": [0.03, 0.05, 0.07]})
+scenarios["discount_10y"] = ap.discount_factor(scenarios["rate"], 10)
+scenarios["annuity_20y"]  = ap.annuity_immediate(scenarios["rate"], 20)
+```
+
+Rate fundamentals and conversions — `discount_factor(i, t)`, `accumulation_factor(i, t)`,
+`effective_discount(i)`, `force_of_interest(i)` and its inverse `rate_from_force(delta)`, and
+the nominal conversions `nominal_interest(i, m)` / `nominal_discount(i, m)` with their inverses
+`rate_from_nominal_interest(nominal, m)` / `rate_from_nominal_discount(nominal, m)` — all take
+a scalar, array, or Series rate:
+
+```python
+from actuarialpy import force_of_interest, nominal_interest, rate_from_nominal_interest
+
+force_of_interest(0.05)                             # δ = ln(1.05)
+i_m = nominal_interest(0.05, 12)                    # i^(12) convertible monthly
+rate_from_nominal_interest(i_m, 12)                 # back to the effective 0.05
+```
+
+Annuities-certain — present and accumulated values, immediate and due, plus the continuous,
+`m`-thly, increasing, decreasing, geometric, and deferred variants. Each is a closed form, so
+each vectorizes over the rate, and the `i = 0` limit is handled element-wise:
+
+```python
+from actuarialpy import (
+    annuity_immediate, annuity_due, accumulated_immediate,
+    annuity_continuous, increasing_annuity_immediate, geometric_annuity_immediate,
+    perpetuity_immediate,
+)
+
+annuity_due(0.05, 20)                         # ä-angle-n
+accumulated_immediate(0.05, 20)               # s-angle-n
+geometric_annuity_immediate(0.05, 20, 0.02)   # payments growing 2% a year
+perpetuity_immediate(0.05)                    # 1/i
+```
+
+Cash-flow analysis and loans. `net_present_value` and `internal_rate_of_return` take a
+sequence of cash flows (at times `0, 1, 2, …` by default, or explicit `times`) and return a
+scalar; `level_payment`, `outstanding_balance`, and `amortization_schedule` handle loan
+amortization:
+
+```python
+from actuarialpy import net_present_value, internal_rate_of_return, amortization_schedule
+
+net_present_value(0.06, [-1000, 300, 400, 500])   # discounted at 6%
+internal_rate_of_return([-1000, 300, 400, 500])   # the rate making NPV = 0
+
+sched = amortization_schedule(principal=100_000, i=0.05, n=30)
+# columns: period, payment, interest, principal, balance
+```
+
+Discounting against a spot curve and day-count fractions. `discount_factors(spot_rates, times)`
+returns the vector of `(1+s_t)^{-t}`, `present_value_curve(cashflows, spot_rates, times)` prices a
+stream on that curve, and `year_fraction(start, end, convention)` computes day-count fractions
+(`"actual/365"`, `"actual/360"`, `"30/360"`, `"actual/actual"`):
+
+```python
+from actuarialpy import discount_factors, present_value_curve, year_fraction
+
+spot = [0.03, 0.035, 0.04]
+present_value_curve([100, 100, 1100], spot_rates=spot, times=[1, 2, 3])
+year_fraction("2024-01-15", "2024-07-15", convention="30/360")
+```
+
+The cash-flow functions (`net_present_value`, `internal_rate_of_return`, `present_value_curve`)
+and `discount_factors` are reductions or curve operations over a whole stream — they take the
+sequence and return a scalar or the matching factor vector. Everything else is element-wise over
+the rate and mirrors input type as shown above.
 
 ## Lifecycle, pooling, banding, margins
 
