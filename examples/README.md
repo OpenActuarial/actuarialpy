@@ -22,6 +22,7 @@ entirely in these callers.
 | `per_line_development.py` | reserving | grouped development via `chain_ladder_by` — each line fit by its own pattern with a CV per line, showing why pooling different volatilities hides the difference |
 | `seasonality.py` | seasonality | `business_days_in_period`, `seasonality_factors` → `deseasonalize`, plus per-line `seasonality_factors_by` + grouped `deseasonalize(by=)` |
 | `trend_and_forecast.py` | trend | `trend_summary`, `annualized_trend`, `project_forward`, `trend_factor`, and `fit_trend` (log-linear trend with diagnostics, fit on deseasonalized history) |
+| `credibility.py` | credibility | limited-fluctuation (`full_credibility_claims`, `limited_fluctuation_z`, `credibility_weighted_estimate`) blended per group, and greatest-accuracy `BuhlmannStraub` (Z from EPV/VHM) |
 
 ## The sample data
 
