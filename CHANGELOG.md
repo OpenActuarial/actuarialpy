@@ -1,12 +1,5 @@
 # Changelog
 
-## 0.42.0
-
-### Added
-
-- `persistency` module: `Persistency` model and `fit_persistency` for renewal
-  probability as a function of the rate action (the lapse-vs-rate-increase curve).
-
 ## 0.41.0
 
 ### Changed

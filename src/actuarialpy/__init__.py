@@ -122,7 +122,6 @@ from actuarialpy.seasonality import (
     seasonality_factors,
     seasonality_factors_by,
 )
-from actuarialpy.persistency import Persistency, fit_persistency
 
 __all__ = [
     "Experience",
@@ -254,9 +253,6 @@ __all__ = [
     "age",
     "exposure_years",
     "add_exposure_column",
-    # persistency / renewal probability
-    "Persistency",
-    "fit_persistency",
 ]
 
 from importlib.metadata import PackageNotFoundError as _PackageNotFoundError, version as _version
