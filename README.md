@@ -69,23 +69,6 @@ fit = ap.fit_trend(monthly, date_col="month", value_col="loss_ratio")
 ap.project_forward(fit, periods=12)
 ```
 
-Build the aggregate with pandas at the grain that matches the question. Typically this is a
-single `groupby` that sums claims, counts exposure from a correctly-grained table (e.g. a
-health book's member-months from eligibility, **counted** rather than summed, because the
-count does not repeat across a member's claim rows), and joins premium:
-
-```python
-g = ["group_id", "month"]
-data = (claims.groupby(g)["paid_amount"].sum().rename("claims").to_frame()
-        .join(eligibility.groupby(g).size().rename("member_months"))   # counted, not summed
-        .join(premium.groupby(g)["premium"].sum().rename("premium"))
-        .reset_index())
-```
-
-Choose the grain to match the question: add `"service_type"` for a per-line view, or keep
-`member_id` for member-level analysis. For single calculations, call the free functions
-directly on any aggregate.
-
 ## Ratios and per-exposure metrics
 
 All of these accept scalars, NumPy arrays, or pandas Series, and divide safely (returning
