@@ -15,11 +15,6 @@ The walkthroughs are health-flavored (member-months, PMPM print labels) as a con
 to work through; the core they exercise is domain-agnostic, and the domain vocabulary lives
 entirely in these callers.
 
-> For examples of the **`Experience` object** and experience analysis (renewals, claimant
-> concentration, restatement chains, trend decomposition, credibility blending, banded
-> summaries), see the [`experiencestudies`](https://github.com/OpenActuarial/experiencestudies)
-> package's own `examples/` directory.
-
 | Script | Surface | What it shows |
 |---|---|---|
 | `reserving_ibnr.py` | reserving | `make_completion_triangle` → `completion_factors` → `apply_completion` → `ibnr`, per-line `completion_factors_by` + grouped `apply_completion(by=)`, and `develop_ultimate` (chain ladder vs Bornhuetter-Ferguson vs Benktander vs Cape Cod) |
