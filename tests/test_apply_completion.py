@@ -1,4 +1,4 @@
-"""Tests for applying completion factors (apply_completion and Experience.complete).
+"""Tests for applying completion factors (apply_completion).
 
 The decisive correctness property is that apply_completion on the latest diagonal
 reproduces ChainLadder.project's per-origin ultimates exactly -- proving the lag scale,
@@ -12,7 +12,6 @@ import pytest
 
 from actuarialpy import (
     ChainLadder,
-    Experience,
     apply_completion,
     completion_factors,
     make_completion_triangle,
@@ -125,29 +124,6 @@ def test_interior_missing_development_stays_nan():
     assert np.isclose(out["claims_completed"].iloc[0], 250.0)  # 100 / 0.40
 
 
-# --- Experience.complete facade --------------------------------------------
-
-def test_experience_complete_matches_and_composes():
-    dev, tri, cf, latest, val_ts, key, lag, ult_true = _scenario()
-    ult_cl = ChainLadder.fit(tri).project(tri)["ultimate"].reindex(key).to_numpy()
-    exp = Experience(latest.assign(premium=latest["claims"] * 1.2), expense="claims",
-                     revenue="premium", exposure="member_months", date="origin")
-    done = exp.complete(cf, valuation_date=val_ts)
-    assert isinstance(done, Experience) and done is not exp
-    assert np.allclose(done.data["claims"].to_numpy(), ult_cl)  # completed in place
-    assert np.allclose(exp.data["claims"], latest["claims"])  # original untouched
-    assert np.allclose(done.data["member_months"], latest["member_months"])  # exposure untouched
-    assert done.by().shape[0] >= 1  # composes
-
-
-def test_experience_complete_requires_date_without_development_col():
-    dev, tri, cf, latest, val_ts, *_ = _scenario()
-    nodate = Experience(latest.assign(premium=latest["claims"]), expense="claims",
-                        revenue="premium", exposure="member_months")
-    with pytest.raises(ValueError):
-        nodate.complete(cf, valuation_date=val_ts)
-
-
 # --- grouped (per-segment) completion via by= ------------------------------
 
 from actuarialpy import completion_factors_by, development_months, lag_months  # noqa: E402
@@ -223,14 +199,3 @@ def test_grouped_completion_beyond_group_max_is_complete():
         sub = comp[comp["lob"] == lob].sort_values("o")
         assert np.isclose(sub.iloc[0]["claims_completed"], sub.iloc[0]["claims"])
 
-
-def test_experience_complete_grouped():
-    dev, cf_by, latest, val_ts = _two_lob_scenario()
-    exp = Experience(latest.assign(premium=latest["claims"] * 1.2, member_months=1000),
-                     expense="claims", revenue="premium", exposure="member_months", date="o")
-    done = exp.complete(cf_by, valuation_date=val_ts, by="lob")
-    assert isinstance(done, Experience) and done is not exp
-    # matches the free-function grouped result
-    ref = apply_completion(latest, cf_by, value_col="claims", date_col="o", valuation_date=val_ts, by="lob")
-    assert np.allclose(done.data["claims"].to_numpy(), ref["claims_completed"].to_numpy())
-    assert done.by().shape[0] >= 1

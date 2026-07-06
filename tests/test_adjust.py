@@ -6,7 +6,6 @@ import pandas as pd
 import pytest
 
 from actuarialpy import (
-    Experience,
     adjust,
     apply_completion,
     completion_factors,
@@ -100,20 +99,6 @@ def test_audit_divide_contributes_reciprocal():
     df = pd.DataFrame({"k": ["a"], "v": [100.0]})
     out = adjust(df, pd.Series({"a": 4.0}), value_col="v", on="k", how="divide", audit_col="m")
     assert np.allclose(out["v"], [25.0]) and np.allclose(out["m"], [0.25])
-
-
-# --- facade ------------------------------------------------------------------
-
-def test_experience_adjust_in_place_and_composes():
-    df = pd.DataFrame({"month": pd.date_range("2024-01-01", periods=4, freq="MS"),
-                       "region": ["N", "S", "N", "W"], "claims": [100.0, 200.0, 300.0, 400.0],
-                       "premium": [120.0, 240.0, 360.0, 480.0], "member_months": [10, 10, 10, 10]})
-    area = pd.Series({"N": 1.10, "S": 0.95, "W": 1.20})
-    exp = Experience(df, expense="claims", revenue="premium", exposure="member_months", date="month")
-    out = exp.adjust(1.05).adjust(area, on="region", audit_col="restate")
-    assert isinstance(out, Experience) and out is not exp
-    assert "restate" in out.data.columns
-    assert np.allclose(out.data["claims"], df["claims"] * 1.05 * area.reindex(df["region"]).to_numpy())
 
 
 # --- equivalence to the special cases (the design claim, as a regression) ----

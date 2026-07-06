@@ -2,24 +2,23 @@
 
 [![CI](https://github.com/OpenActuarial/actuarialpy/actions/workflows/ci.yml/badge.svg)](https://github.com/OpenActuarial/actuarialpy/actions/workflows/ci.yml) [![PyPI](https://img.shields.io/pypi/v/actuarialpy)](https://pypi.org/project/actuarialpy/)
 
-Standard actuarial analyses on claims, exposure, and premium data: loss ratios and per-exposure rates,
-development triangles and IBNR, trend, credibility, seasonality, and frequency-severity
-decomposition, computed from long, transactional tables. The only dependencies are `numpy`
-and `pandas`, and every result is a DataFrame or Series.
+Shared actuarial primitives and general tooling on claims, exposure, and premium data:
+loss ratios and per-exposure rates, development triangles and IBNR, credibility, trend,
+seasonality, financial mathematics, exposure and lifecycle bases, size banding, pooling,
+margins, weighted rollups, and the underwriting income statement. The only dependencies
+are `numpy` and `pandas`, and every result is a DataFrame or Series.
 
 ## Contents
 
 - [Overview](#overview)
 - [Installation](#installation)
 - [Quick start](#quick-start)
-- [The `Experience` object](#the-experience-object)
 - [Ratios and per-exposure metrics](#ratios-and-per-exposure-metrics)
 - [Reserving](#reserving)
-- [Trend and forecasting](#trend-and-forecasting)
-- [Frequency-severity and per-exposure decomposition](#frequency-severity-and-per-exposure-decomposition)
+- [Trend](#trend)
 - [Seasonality and working days](#seasonality-and-working-days)
 - [Adjustments and restatement](#adjustments-and-restatement)
-- [Actual versus forecast](#actual-versus-forecast)
+- [Comparison and contribution](#comparison-and-contribution)
 - [Credibility](#credibility)
 - [Financial mathematics (time value of money)](#financial-mathematics-time-value-of-money)
 - [Lifecycle, pooling, banding, margins](#lifecycle-pooling-banding-margins)
@@ -28,20 +27,18 @@ and `pandas`, and every result is a DataFrame or Series.
 
 ## Overview
 
-**`actuarialpy`** is a calculation library for loss ratios, per-exposure rates, chain-ladder
-development, credibility, seasonal factors, and the LMDI trend decomposition, applied to
-claims, exposure, and premium data. It does not perform data preparation or encode filed
-methodology: the caller supplies the table and selects the method.
+**`actuarialpy`** is a calculation library of actuarial primitives: loss ratios and
+per-exposure rates, chain-ladder development and IBNR, credibility, trend, seasonal
+factors, financial mathematics, exposure and lifecycle bases, size banding, pooling, and
+the underwriting income statement, applied to claims, exposure, and premium data. It does
+not perform data preparation or encode filed methodology: the caller supplies the table
+and selects the method.
 
-There are two interfaces:
-
-- **Free functions** — `loss_ratio`, `per_exposure`, `severity`, `trend_factor`, `fit_trend`,
-  `seasonality_factors`, `decompose_per_exposure_trend`, the credibility models, and others. Each
-  accepts scalars, NumPy arrays, or pandas Series and returns the same type. They operate on
-  any frame at any grain.
-- **The `Experience` object** — binds the column roles (expense, revenue, exposure, date)
-  once and reuses them across grouped summaries, rolling windows, trends, completion,
-  seasonality, and more. Use it when running several analyses at one grain.
+Functions accept scalars, NumPy arrays, or pandas Series — or a DataFrame at any grain —
+and return the same type: `loss_ratio`, `per_exposure`, `severity`, `trend_factor`,
+`fit_trend`, `seasonality_factors`, `completion_factors`, the credibility models, and
+others. They operate on any frame at any grain, so you choose the grain to match the
+question.
 
 ## Installation
 
@@ -51,31 +48,31 @@ pip install actuarialpy
 
 ## Quick start
 
-Pass one table at the grain you are analysing (one row per unit, e.g. per group per month),
-name its columns, and request views:
+Pass an aggregate at the grain you are analysing and call the primitive you need:
 
 ```python
 import actuarialpy as ap
 
-exp = ap.Experience(
-    data,
-    expense="claims",            # the loss / claim amount column(s)
-    revenue="premium",           # the premium / revenue column(s)
-    exposure="member_months",    # the exposure column(s)
-    date="month",                # the time column
-    profile="health",            # naming profile (health -> mlr on output views)
-)
+# ratios and per-exposure rates on any aggregate
+ap.loss_ratio(1_240_000, 1_500_000)            # 0.827
+ap.per_exposure(1_240_000, 12_000)             # 103.33 per exposure unit
 
-exp.by("group_id")                          # grouped totals + loss ratio (mlr under the health profile)
-exp.rolling(12, groupby="group_id")         # trailing-12 view per group
-exp.trend(date_col="month",                 # period-over-period trend
-          prior_start="2024-01-01", prior_end="2024-12-01",
-          current_start="2025-01-01", current_end="2025-12-01")
+# chain-ladder development to ultimate + IBNR from a triangle
+tri = ap.make_completion_triangle(dev, origin_col="origin",
+                                  valuation_col="valuation", amount_col="paid")
+cf = ap.completion_factors(tri)
+completed = ap.apply_completion(latest, cf, value_col="claims",
+                                date_col="origin", valuation_date="2024-12-31")
+
+# fit a trend and project it forward
+fit = ap.fit_trend(monthly, date_col="month", value_col="loss_ratio")
+ap.project_forward(fit, periods=12)
 ```
 
-Build `data` with pandas. Typically this is a single `groupby` that aggregates claims to the
-grain, counts exposure from a correctly-grained table (here a health book's
-member-months from eligibility), and joins premium:
+Build the aggregate with pandas at the grain that matches the question. Typically this is a
+single `groupby` that sums claims, counts exposure from a correctly-grained table (e.g. a
+health book's member-months from eligibility, **counted** rather than summed, because the
+count does not repeat across a member's claim rows), and joins premium:
 
 ```python
 g = ["group_id", "month"]
@@ -85,40 +82,9 @@ data = (claims.groupby(g)["paid_amount"].sum().rename("claims").to_frame()
         .reset_index())
 ```
 
-Member-months are counted from eligibility rather than summed from claims, because the
-eligibility count does not repeat across a member's claim rows. The remaining steps are
-standard aggregation. Choose the grain to match the question: add `"service_type"` for a
-per-line view, or keep `member_id` for member-level analysis. For single calculations, use
-the [free functions](#ratios-and-per-exposure-metrics) directly on any aggregate.
-
-## The `Experience` object
-
-The bound roles are reused by every method, so the expense, revenue, exposure, and date
-columns are specified once. Binding `count` (a claim or service count) enables the
-frequency-severity views (`frequency_severity`, `decompose_trend`). `filter(...)` and
-`with_roles(...)` return new objects without mutating the original.
-
-### `Experience` methods
-
-| Method | Produces |
-| --- | --- |
-| `by(groupby)` | grouped totals and ratios |
-| `views(views)` | a dict of named grouped summaries |
-| `rolling(window, groupby)` | rolling-window summaries |
-| `trend(prior/current windows, groupby)` | period-over-period trend |
-| `components(...)` / `component_summary(...)` | component / driver breakdowns |
-| `decompose_trend(...)` | frequency × severity (× mix) split |
-| `actual_vs_expected(expected, actual, ...)` | actual-versus-expected with variances |
-| `claimants(...)` / `top_claimants(...)` / `claimant_concentration(...)` | large-claimant and concentration views |
-| `pool_claimants(claimant_col, pooling_point)` | pooled vs. excess by claimant |
-| `cohort(...)` / `duration(...)` | cohort and duration summaries |
-| `by_band(value_col, bands)` | banded summaries |
-| `with_status(...)` / `by_status(...)` | lifecycle status assignment and summary |
-| `margin(...)` | underwriting margins |
-| `credibility_weighted(groupby, z, metric)` | credibility-blended estimates by group |
-| `deseasonalize(factors)` / `complete(factors, valuation_date)` | new Experience with seasonality removed / claims developed to ultimate |
-| `adjust(factors, on, by, how, audit_col)` | new Experience with a column restated by a joined factor |
-| `filter(...)` / `with_roles(...)` | derive a new Experience |
+Choose the grain to match the question: add `"service_type"` for a per-line view, or keep
+`member_id` for member-level analysis. For single calculations, call the free functions
+directly on any aggregate.
 
 ## Ratios and per-exposure metrics
 
@@ -200,11 +166,10 @@ rather than producing a many-to-many join. Methods that blend emerged-to-date ex
 with an a priori are available through `develop_ultimate(..., method=...)`: `"chain_ladder"`,
 `"bornhuetter_ferguson"` (with `apriori_col`), `"benktander"`, and `"cape_cod"` (a priori
 derived from the data, taking `exposure_col`). All accept `by=`. The method is applied as
-specified; the a priori and exposure base are caller-supplied. On the `Experience` object,
-`complete(factors, valuation_date=...)` returns a new Experience with the expense column
-developed to ultimate. Run completion before deseasonalizing and trending.
+specified; the a priori and exposure base are caller-supplied. Run completion before
+deseasonalizing and trending.
 
-## Trend and forecasting
+## Trend
 
 ```python
 from actuarialpy import trend_factor, annualized_trend, project_forward
@@ -229,41 +194,7 @@ fit.factor(18)            # (1 + annual_trend) ** (18/12)
 
 It fits on the rate (`claims / member_months`) when an exposure is given, otherwise on the
 value. Time is measured from dates, so missing periods are handled correctly. Fit on
-completed, deseasonalized history (`complete` → `deseasonalize` → `fit_trend`) so runout and
-seasonality do not bias the slope. Rate-based projection is in the forecast module:
-`forecast_experience(...)` applies a trended per-exposure rate to projected exposure.
-
-## Frequency-severity and per-exposure decomposition
-
-Split a per-exposure loss into frequency and severity, and decompose the change between two
-periods into frequency and severity effects. It requires a claim or service count
-alongside losses and exposure:
-
-```python
-from actuarialpy import frequency_severity_summary, decompose_per_exposure_trend
-
-panel = frequency_severity_summary(
-    df, count_col="claim_count", loss_col="claims", exposure_col="member_months",
-    groupby="plan",
-)
-# columns: plan, member_months, claim_count, claims, frequency, severity, loss_per_exposure
-# loss_per_exposure == frequency * severity for every row
-
-trend = decompose_per_exposure_trend(
-    prior_year, current_year,
-    count_col="claim_count", loss_col="claims", exposure_col="member_months",
-    on="plan",            # optional; omit for a single total row
-)
-# loss_per_exposure_trend == frequency_trend * severity_trend (exact); loss_per_exposure_change == frequency_effect + severity_effect
-```
-
-Pass `mix_by` to split the per-exposure trend into frequency, severity, and mix when the book is a blend of
-cells whose composition changes between periods; otherwise a book-wide frequency or severity
-trend absorbs exposure-mix shifts. The split uses LMDI (logarithmic mean Divisia index),
-which is order-independent and leaves no residual. Every cell must have positive count, loss,
-and exposure in both periods. On an `Experience`, the same split is `exp.decompose_trend(...)`,
-using the bound `count`, `expense`, and `exposure` roles. See
-[`examples/trend_decomposition.py`](examples/trend_decomposition.py).
+completed, deseasonalized history so runout and seasonality do not bias the slope.
 
 ## Seasonality and working days
 
@@ -286,10 +217,8 @@ apply_seasonality(annual_plan, factors, date_col="month", value_col="budget")  #
 
 `business_days_in_period` counts weekdays minus holidays (US federal by default) for the
 working-day effect; when using both, normalize by working days first, then fit factors on the
-normalized series. On the `Experience` object, `deseasonalize(factors)` divides the pattern
-out of the expense column and returns a new `Experience`, so downstream views use the
-deseasonalized series. `seasonality_factors_by` fits per segment and returns a table indexed
-by `(segment, season)`; pass it with `by=` to `deseasonalize`. A rolling-12 or full-year
+normalized series. `seasonality_factors_by` fits per segment and returns a table indexed by
+`(segment, season)`; pass it with `by=` to `deseasonalize`. A rolling-12 or full-year
 comparison already cancels seasonality; this is mainly needed when fitting trend on monthly
 data.
 
@@ -297,9 +226,9 @@ data.
 
 Experience rating applies a chain of factors to a base amount: completion, trend, benefit
 relativity, area, demographic loads, network discounts. `adjust` joins a factor to each row
-by a key and multiplies (or divides). `complete` and `deseasonalize` derive the key from a
-date; `adjust` keys on a column. All use the same validated join (unique-key check, NaN on
-missing keys, index-independent).
+by a key and multiplies (or divides). The `apply_completion` and `deseasonalize` primitives
+derive the key from a date; `adjust` keys on a column. All use the same validated join
+(unique-key check, NaN on missing keys, index-independent).
 
 ```python
 from actuarialpy import adjust
@@ -312,40 +241,41 @@ adjust(experience, benefit_relativity, value_col="claims",       # a tidy per-se
 ```
 
 `how="multiply"` (default) applies the factor; `how="divide"` removes it. An absent key
-returns `NaN`; pass `default=1.0` to treat a missing key as no adjustment. On the
-`Experience` object, `adjust` returns a new Experience with the expense column restated, and
-`audit_col` records the cumulative restatement multiplier across the chain:
+returns `NaN`; pass `default=1.0` to treat a missing key as no adjustment. `audit_col`
+accumulates the net restatement multiplier across a chain of `adjust` calls, so the total
+effect of trend and relativity loads is auditable on one column:
 
 ```python
-restated = (
-    exp.complete(cf_by_lob, valuation_date="2024-12-31", by="line_of_business")
-       .adjust(1.072, audit_col="restatement")                                     # trend
-       .adjust(benefit_relativity, on="plan", by="line_of_business", audit_col="restatement")
-       .adjust(area, on="region", audit_col="restatement")
-)
-restated.by()   # grouped loss ratios on the fully restated claims
+step1 = adjust(experience, 1.072, value_col="claims", audit_col="restatement")   # trend
+step2 = adjust(step1, benefit_relativity, value_col="claims",
+               on="plan", by="line_of_business", audit_col="restatement")
+step3 = adjust(step2, area, value_col="claims", on="region", audit_col="restatement")
+# step3["restatement"] == 1.072 * benefit_relativity * area   (per row)
 ```
 
-## Actual versus forecast
+## Comparison and contribution
 
-Compare actuals against a forecast supplied as two separate tables, joined on shared keys:
+Small primitives for period-over-period movement and share-of-total attribution, on
+scalars, arrays, or Series:
 
 ```python
-from actuarialpy.forecast import compare_actual_to_expected
-
-variance = compare_actual_to_expected(
-    actuals_table, forecast_table,
-    on=["month", "segment", "product", "category"],
-    actual_col="amount", expected_col="amount",
-    how="outer",                         # keep forecast months without actuals yet
-    suffixes=("actual", "forecast"),     # -> amount_actual, amount_forecast
+from actuarialpy import (
+    absolute_change, percent_change, basis_point_change, variance, variance_pct,
+    share_of_total, contribution_to_change, top_contributors,
 )
-# columns: <keys...>, amount_actual, amount_forecast, variance, variance_pct, actual_to_expected
+
+percent_change(prior=1.00, current=1.08)          # 0.08
+basis_point_change(prior=0.822, current=0.831)    # 90.0 (bps)
+variance(actual=1_050_000, expected=1_000_000)    # 50_000  (actual - expected)
+
+share_of_total(df["claims"])                       # each row's share of the column total
+contribution_to_change(prior_df, current_df, value_col="claims", on="plan")
+top_contributors(df, value_col="claims", on="plan", n=5)
 ```
 
-With `how="outer"`, a forecast month with no actual is kept with the missing side `NaN`, so
-an unavailable actual is distinguishable from zero. When `category` mixes units (dollars and
-counts), keep it in the keys or filter to one category before totalling.
+`variance`/`variance_pct` and `actual_to_expected` express the same actual-versus-expected
+gap in different units — use them when you already have an actual and an expected column to
+compare.
 
 ## Credibility
 
@@ -481,7 +411,9 @@ the rate and mirrors input type as shown above.
   retained aggregate of `n_units` independent units capped at `retention`, and
   `retention_for_target_cv(outcomes, n_units, target_cv)` inverts it to the retention at
   which that CV meets a target (the basis for a size-graded retention).
-- **Banding** (`banding`): `assign_band(df, value_col, bands)` and `summarize_by_band(...)`.
+- **Banding**: `assign_band(df, value_col, bands)` buckets rows into ordered size bands
+  (a trailing `float("inf")` captures the open top band; the result is an ordered
+  categorical, so downstream group-bys keep band order).
 - **Margins** (`margins`): `add_margin(...)` / `margin(...)` / `margin_ratio(...)`.
 - **Contribution** (`contribution`): `share_of_total(...)`, `contribution_to_change(...)`,
   `top_contributors(...)`.
@@ -532,13 +464,18 @@ weighted_summary(book, value_cols="rate_action", weight_col="premium",
 
 ## Reporting
 
-Write a set of named analysis views to a multi-sheet Excel workbook:
+Write a set of named analysis views to a multi-sheet Excel workbook (one sheet per key).
+The values are plain DataFrames, so anything you compute — grouped summaries, triangles,
+trend tables — can be a sheet:
 
 ```python
-from actuarialpy.reporting import to_excel_report
+from actuarialpy import to_excel_report
 
-views = exp.views({"overall": None, "by_group": "group_id"})
-to_excel_report(views, "experience_report.xlsx")
+views = {
+    "overall": overall_summary,      # a DataFrame per sheet
+    "by_group": by_group_summary,
+}
+to_excel_report(views, "report.xlsx")   # requires the `excel` extra (openpyxl)
 ```
 
 ## Testing

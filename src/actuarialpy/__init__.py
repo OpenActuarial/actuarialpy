@@ -1,6 +1,18 @@
-"""ActuarialPy: tools for actuarial experience analysis."""
+"""actuarialpy: shared actuarial primitives and general tooling.
 
-from actuarialpy.frame import Experience
+Calculation building blocks on tidy tables: ratios and per-exposure metrics,
+chain-ladder development and IBNR, credibility, trend, seasonality, financial
+mathematics (time value of money), exposure and lifecycle bases, size banding,
+pooling, margins, weighted rollups, the underwriting income statement, and
+comparison/contribution/reporting helpers. Every result is a DataFrame or Series
+and the only dependencies are ``numpy`` and ``pandas``.
+
+The experience reporting and analysis layer -- the fluent ``Experience`` object,
+experience summaries, actual-versus-expected, claimant/cohort/component studies,
+decomposition, rolling monitors, and forecasting -- now lives in the separate
+``experiencestudies`` package, which builds on these primitives.
+"""
+
 from actuarialpy.metrics import (
     actual_to_expected,
     combined_ratio,
@@ -85,7 +97,7 @@ from actuarialpy.lifecycle import (
     earned_exposure,
     is_in_force,
 )
-from actuarialpy.banding import assign_band, summarize_by_band
+from actuarialpy.banding import assign_band
 from actuarialpy.adjustments import adjust
 from actuarialpy.columns import factor_lookup
 from actuarialpy.margins import add_margin, margin, margin_ratio
@@ -97,10 +109,6 @@ from actuarialpy.pooling import (
     retained_cv,
     retention_for_target_cv,
 )
-from actuarialpy.experience import status_summary, summarize_experience, summarize_views
-from actuarialpy.expected import summarize_actual_vs_expected
-from actuarialpy.claimants import summarize_claimants, top_claimants, large_claimant_flags, claim_concentration
-from actuarialpy.rolling import rolling_summary
 from actuarialpy.trend import (
     TrendFit,
     annualized_trend,
@@ -111,9 +119,6 @@ from actuarialpy.trend import (
     trend_factor,
     trend_summary,
 )
-from actuarialpy.components import component_driver_analysis, component_trend, summarize_components
-from actuarialpy.cohorts import cohort_summary, cohort_summary_by_period, duration_summary
-from actuarialpy.decomposition import decompose_per_exposure_trend, frequency_severity_summary
 from actuarialpy.seasonality import (
     add_business_days,
     apply_seasonality,
@@ -122,12 +127,25 @@ from actuarialpy.seasonality import (
     seasonality_factors,
     seasonality_factors_by,
 )
+from actuarialpy.periods import add_period_column, to_period
+from actuarialpy.compare import (
+    absolute_change,
+    basis_point_change,
+    percent_change,
+    variance,
+    variance_pct,
+)
+from actuarialpy.contribution import (
+    component_contribution,
+    contribution_to_change,
+    share_of_total,
+    top_contributors,
+)
+from actuarialpy.reporting import to_excel_report
 
 __all__ = [
-    "Experience",
+    # ratios and per-exposure metrics
     "actual_to_expected",
-    "adjust",
-    "factor_lookup",
     "combined_ratio",
     "expense_ratio",
     "frequency",
@@ -140,6 +158,7 @@ __all__ = [
     "required_revenue",
     "safe_divide",
     "severity",
+    # reserving / development
     "ChainLadder",
     "InsufficientDataWarning",
     "chain_ladder_by",
@@ -152,31 +171,6 @@ __all__ = [
     "development_months",
     "make_completion_triangle",
     "validate_completion_factors",
-    "status_summary",
-    "summarize_experience",
-    "summarize_views",
-    "summarize_actual_vs_expected",
-    "summarize_claimants",
-    "top_claimants",
-    "large_claimant_flags",
-    "claim_concentration",
-    "cohort_summary",
-    "cohort_summary_by_period",
-    "frequency_severity_summary",
-    "decompose_per_exposure_trend",
-    "duration_summary",
-    "rolling_summary",
-    "annualized_trend",
-    "midpoint_trend_factor",
-    "period_change",
-    "project_forward",
-    "fit_trend",
-    "TrendFit",
-    "trend_factor",
-    "trend_summary",
-    "component_driver_analysis",
-    "component_trend",
-    "summarize_components",
     # credibility
     "Buhlmann",
     "BuhlmannStraub",
@@ -192,9 +186,15 @@ __all__ = [
     "derive_status",
     "earned_exposure",
     "is_in_force",
-    # banding
+    # exposure and age bases
+    "age",
+    "exposure_years",
+    "add_exposure_column",
+    # banding (primitive)
     "assign_band",
-    "summarize_by_band",
+    # adjustments / restatement
+    "adjust",
+    "factor_lookup",
     # margins
     "add_margin",
     "margin",
@@ -210,6 +210,15 @@ __all__ = [
     "pool_losses",
     "retained_cv",
     "retention_for_target_cv",
+    # trend
+    "annualized_trend",
+    "midpoint_trend_factor",
+    "period_change",
+    "project_forward",
+    "fit_trend",
+    "TrendFit",
+    "trend_factor",
+    "trend_summary",
     # seasonality and working-day adjustment
     "business_days_in_period",
     "add_business_days",
@@ -217,6 +226,22 @@ __all__ = [
     "seasonality_factors_by",
     "deseasonalize",
     "apply_seasonality",
+    # date / period helpers
+    "to_period",
+    "add_period_column",
+    # comparison and variance
+    "absolute_change",
+    "percent_change",
+    "basis_point_change",
+    "variance",
+    "variance_pct",
+    # contribution / driver primitives
+    "share_of_total",
+    "contribution_to_change",
+    "top_contributors",
+    "component_contribution",
+    # reporting
+    "to_excel_report",
     # financial mathematics (time value of money)
     "discount_factor",
     "accumulation_factor",
@@ -249,10 +274,6 @@ __all__ = [
     "discount_factors",
     "present_value_curve",
     "year_fraction",
-    # exposure and age bases
-    "age",
-    "exposure_years",
-    "add_exposure_column",
 ]
 
 from importlib.metadata import PackageNotFoundError as _PackageNotFoundError, version as _version

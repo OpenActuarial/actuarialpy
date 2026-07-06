@@ -169,81 +169,6 @@ def test_missing_columns_raise():
         seasonality_factors(df, date_col="month", value_col="not_there")
 
 
-# --- Experience.deseasonalize lens ------------------------------------------
-
-from actuarialpy import Experience  # noqa: E402
-
-
-def _exp_book():
-    df = _book().assign(premium=lambda d: (d["claims"] * 1.15).round(2))
-    exp = Experience(df, expense="claims", revenue="premium", exposure="member_months", date="month")
-    factors = seasonality_factors(df, date_col="month", value_col="claims", exposure_col="member_months")
-    return df, exp, factors
-
-
-def test_experience_deseasonalize_returns_new_experience():
-    _, exp, f = _exp_book()
-    clean = exp.deseasonalize(f)
-    assert isinstance(clean, Experience)
-    assert clean is not exp
-
-
-def test_experience_deseasonalize_leaves_original_untouched():
-    df, exp, f = _exp_book()
-    before = exp.data["claims"].copy()
-    exp.deseasonalize(f)
-    assert np.allclose(exp.data["claims"], before)
-
-
-def test_experience_deseasonalize_divides_expense_only():
-    df, exp, f = _exp_book()
-    clean = exp.deseasonalize(f)
-    fac = df["month"].dt.month.map(f).values
-    assert np.allclose(clean.data["claims"], df["claims"].values / fac)
-    assert np.allclose(clean.data["member_months"], df["member_months"])  # exposure untouched
-    assert np.allclose(clean.data["premium"], df["premium"])  # revenue untouched
-
-
-def test_experience_deseasonalize_removes_monthly_swing():
-    df, exp, f = _exp_book()
-    clean = exp.deseasonalize(f)
-    raw = (df["claims"] / df["member_months"]).values
-    cl = (clean.data["claims"] / clean.data["member_months"]).values
-    assert np.std(np.diff(cl) / cl[:-1]) < np.std(np.diff(raw) / raw[:-1]) / 5
-
-
-def test_experience_deseasonalize_composes_with_views():
-    _, exp, f = _exp_book()
-    clean = exp.deseasonalize(f)
-    assert clean.by().shape[0] >= 1
-    assert clean.rolling(12).shape[0] >= 1
-
-
-def test_experience_deseasonalize_columns_override_multi():
-    df = _book().assign(rx=lambda d: (d["claims"] * 0.2).round(2), premium=lambda d: (d["claims"] * 1.15).round(2))
-    exp = Experience(df, expense=["claims", "rx"], revenue="premium", exposure="member_months", date="month")
-    f = seasonality_factors(df, date_col="month", value_col="claims", exposure_col="member_months")
-    clean = exp.deseasonalize(f)
-    fac = df["month"].dt.month.map(f).values
-    assert np.allclose(clean.data["claims"], df["claims"].values / fac)
-    assert np.allclose(clean.data["rx"], (df["claims"].values * 0.2) / fac)
-
-
-def test_experience_deseasonalize_columns_subset():
-    df, exp, f = _exp_book()
-    clean = exp.deseasonalize(f, columns="claims")
-    fac = df["month"].dt.month.map(f).values
-    assert np.allclose(clean.data["claims"], df["claims"].values / fac)
-    assert np.allclose(clean.data["premium"], df["premium"])  # not selected -> untouched
-
-
-def test_experience_deseasonalize_requires_date():
-    df, _, f = _exp_book()
-    nodate = Experience(df, expense="claims", revenue="premium", exposure="member_months")
-    with pytest.raises(ValueError):
-        nodate.deseasonalize(f)
-
-
 # --- grouped (per-segment) seasonality via by= -----------------------------
 
 from actuarialpy import seasonality_factors_by  # noqa: E402
@@ -311,16 +236,6 @@ def test_grouped_seasonality_absent_group_is_nan():
     df2.loc[df2.index[0], "lob"] = "Z"
     ds = deseasonalize(df2, sf, date_col="month", value_col="claims", by="lob")
     assert pd.isna(ds.iloc[0]["claims_deseasonalized"])
-
-
-def test_experience_deseasonalize_grouped():
-    df = _two_lob_seasonal().assign(premium=lambda d: d["claims"] * 1.2)
-    sf = seasonality_factors_by(df, groupby="lob", date_col="month", value_col="claims", exposure_col="member_months")
-    exp = Experience(df, expense="claims", revenue="premium", exposure="member_months", date="month")
-    clean = exp.deseasonalize(sf, by="lob")
-    ref = deseasonalize(df, sf, date_col="month", value_col="claims", by="lob")
-    assert np.allclose(clean.data["claims"].to_numpy(), ref["claims_deseasonalized"].to_numpy())
-    assert clean.by().shape[0] >= 1
 
 
 def test_multi_column_grouping():

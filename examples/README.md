@@ -1,64 +1,42 @@
 # actuarialpy examples
 
-Self-contained, runnable examples for the main surfaces of `actuarialpy`. Each
-script generates its own small synthetic data (via `_sample_data.py`) and prints
-a short report, so they run with nothing but the package installed:
+Self-contained, runnable examples for the primitive surfaces of `actuarialpy`. Each script
+generates its own small synthetic data (via `_sample_data.py`) and prints a short report, so
+they run with nothing but the package installed:
 
 ```bash
 pip install actuarialpy
-python experience_basics.py
+python reserving_ibnr.py
 ```
 
 Every script is standalone — run any one directly, in any order.
 
-The walkthroughs are health-flavored (member-months, PMPM print labels) as a
-concrete book to work through; the core they exercise is domain-agnostic, and
-the domain vocabulary lives entirely in these callers.
+The walkthroughs are health-flavored (member-months, PMPM print labels) as a concrete book
+to work through; the core they exercise is domain-agnostic, and the domain vocabulary lives
+entirely in these callers.
 
-**Start here:** [`renewal.py`](renewal.py) is the end-to-end study — it threads the
-individual surfaces below into a single group renewal, from experience to indicated rate
-change. The others each focus on one surface.
+> For examples of the **`Experience` object** and experience analysis (renewals, claimant
+> concentration, restatement chains, trend decomposition, credibility blending, banded
+> summaries), see the [`experiencestudies`](https://github.com/OpenActuarial/experiencestudies)
+> package's own `examples/` directory.
 
 | Script | Surface | What it shows |
 |---|---|---|
-| `renewal.py` | **end-to-end** | a full group renewal: complete → trend → relativities (`adjust`) → pool large claimants → credibility-blend with the manual → load → `indicated_change` |
-| `experience_basics.py` | `Experience` facade, metrics | Bind roles once; `.by`, `.views`; metric primitives (`loss_ratio`, `per_exposure`, `pure_premium`) |
-| `claimant_concentration.py` | claimants, pooling | `claimant_concentration`, `top_claimants`, `large_claimant_flags`, `pool_losses`, `excess_over_threshold` |
 | `reserving_ibnr.py` | reserving | `make_completion_triangle` → `completion_factors` → `apply_completion` → `ibnr`, per-line `completion_factors_by` + grouped `apply_completion(by=)`, and `develop_ultimate` (chain ladder vs Bornhuetter-Ferguson vs Benktander vs Cape Cod) |
+| `development_uncertainty.py` | reserving | chain ladder with **Mack standard errors**: `ChainLadder.fit` → `project` → `mack_sigma_squared` → `mack_standard_errors`, reproducing the published Taylor-Ashe (1983)/Mack (1993) reserve and s.e. |
+| `per_line_development.py` | reserving | grouped development via `chain_ladder_by` — each line fit by its own pattern with a CV per line, showing why pooling different volatilities hides the difference |
 | `seasonality.py` | seasonality | `business_days_in_period`, `seasonality_factors` → `deseasonalize`, plus per-line `seasonality_factors_by` + grouped `deseasonalize(by=)` |
-| `restatement.py` | adjustments | `Experience.adjust` chain — scalar trend, per-region and per-line relativities, with a cumulative `audit_col` |
 | `trend_and_forecast.py` | trend | `trend_summary`, `annualized_trend`, `project_forward`, `trend_factor`, and `fit_trend` (log-linear trend with diagnostics, fit on deseasonalized history) |
-| `rolling_trend_monitor.py` | rolling, decomposition | a monthly change-in-trend monitor: each evaluation month compares the trailing-12 window to the same window a year earlier via `decompose_per_exposure_trend`, reporting whether the year-over-year move is frequency- or severity-driven |
-| `trend_decomposition.py` | decomposition | `decompose_per_exposure_trend` two-way (frequency × severity), and the three-way `mix_by=` split — adds a mix term via LMDI, reconciling exactly; single dimension, the cross of two, and `on=` + `mix_by=` together; plus the `Experience.decompose_trend` facade method (same split with columns bound once) |
-| `credibility.py` | credibility | `credibility_weighted_estimate`, `Experience.credibility_weighted` |
-| `lifecycle_and_banding.py` | lifecycle, banding | `derive_status`, `Experience.by_status`, `Experience.by_band` |
 
 ## The sample data
 
-`_sample_data.py` (not part of the library) provides three deterministic generators:
-
-- **`sample_member_months()`** — a member-month experience frame spanning
-  2024–2025: claim components, rebates, non-FFS expense, premium, per-group
-  effective/termination dates, and a subscriber count. A few members incur
-  catastrophic claims so the concentration and pooling examples have a real tail.
-- **`sample_claim_payments()`** — a long (line of business, origin, valuation,
-  incremental-paid) frame for the reserving example, with a distinct payment
-  pattern per line of business so the grouped completion join has something to
-  separate; `make_completion_triangle` accumulates it into a cumulative triangle.
-- **`sample_seasonal_panel()`** — a monthly claims panel by line of business and
-  product over four years, with a real month-of-year seasonal pattern (one line
-  swings hard, the other is mild), membership growth, and a cost trend, for the
-  seasonality example.
-- **`sample_trend_cells()`** — a deterministic two-period (2024/2025) claims panel
-  split into morbidity-segment × region cells, with uniform within-cell frequency
-  (+3%) and unit-cost (+4%) trend and an enrollment shift toward the High segment, so
-  the book-wide two-way overstates both drivers and the mix term recovers the
-  difference; carries `claim_count`, `allowed`, and `premium` so it drives both the
-  free `decompose_per_exposure_trend` and the `Experience.decompose_trend` facade method in the
-  trend-decomposition example.
+`_sample_data.py` (not part of the library) provides deterministic generators shared by these
+scripts — a long claim-payments frame per line of business for the reserving examples, a
+monthly seasonal claims panel for the seasonality example, and a two-period trend panel. Each
+is seeded so output is reproducible.
 
 ## Note
 
-These mirror the worked examples shipped alongside the sibling packages
-(`lossmodels`, `risksim`, `extremeloss`). For an end-to-end application that wires
-all four packages together, see the high-cost-claimant cost-model project.
+These mirror the worked examples shipped alongside the sibling packages (`lossmodels`,
+`risksim`, `extremeloss`). For an end-to-end application that wires the packages together, see
+the high-cost-claimant cost-model project.

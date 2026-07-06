@@ -8,13 +8,12 @@ cut points (e.g. one scheme with six buckets and a coarser one with four).
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Sequence
+from collections.abc import Sequence
 
 import numpy as np
 import pandas as pd
 
 from actuarialpy.columns import validate_columns
-from actuarialpy.experience import summarize_experience
 
 
 def _default_labels(edges: Sequence[float]) -> list[str]:
@@ -69,47 +68,3 @@ def assign_band(
         ordered=True,
     )
     return result
-
-
-def summarize_by_band(
-    df: pd.DataFrame,
-    value_col: str,
-    bands: Sequence[float],
-    *,
-    labels: Sequence[str] | None = None,
-    expense_cols: str | Iterable[str],
-    revenue_cols: str | Iterable[str],
-    exposure_cols: str | Iterable[str] | None = None,
-    band_col: str = "band",
-    ratio_col: str | None = None,
-    right: bool = False,
-    profile: str | None = None,
-) -> pd.DataFrame:
-    """Assign size bands then summarize experience grouped by band.
-
-    Returns one row per band in band order (empty bands included), with the same
-    aggregates, loss ratio, and per-exposure metrics as
-    :func:`~actuarialpy.experience.summarize_experience`.
-    """
-    banded = assign_band(
-        df,
-        value_col,
-        bands,
-        labels=labels,
-        band_col=band_col,
-        right=right,
-        copy=True,
-    )
-    summary = summarize_experience(
-        banded,
-        groupby=band_col,
-        expense_cols=expense_cols,
-        revenue_cols=revenue_cols,
-        exposure_cols=exposure_cols,
-        ratio_col=ratio_col,
-        profile=profile,
-    )
-    # Preserve band order and surface empty bands explicitly.
-    order = list(banded[band_col].cat.categories)
-    summary[band_col] = pd.Categorical(summary[band_col], categories=order, ordered=True)
-    return summary.sort_values(band_col).reset_index(drop=True)

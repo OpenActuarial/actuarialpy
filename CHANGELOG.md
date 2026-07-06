@@ -1,5 +1,52 @@
 # Changelog
 
+## 0.42.0
+
+This release extracts the experience reporting and analysis layer into a new,
+separately installed package, **experiencestudies**. `actuarialpy` is now the
+primitives-and-tooling library; the study layer that builds on it (the fluent
+`Experience` object and the experience/claimant/cohort/decomposition analyses)
+lives in `experiencestudies`, which depends on `actuarialpy`. The dependency is
+strictly one-directional, so the re-exports could not be kept without
+reintroducing a cycle -- this is a hard, breaking cut.
+
+### Removed (moved to experiencestudies)
+
+- The `Experience` object.
+- Experience summaries and views: `summarize_experience`, `summarize_views`,
+  `status_summary`.
+- Actual-versus-expected and forecasting: `summarize_actual_vs_expected`,
+  `expected_from_rate`, `forecast_from_rate`, `forecast_experience`,
+  `compare_actual_to_expected`.
+- Claimant analysis: `summarize_claimants`, `top_claimants`,
+  `large_claimant_flags`, `claim_concentration`.
+- Cohort and duration studies: `cohort_summary`, `cohort_summary_by_period`,
+  `duration_summary`.
+- Driver/component and frequency-severity decomposition:
+  `component_driver_analysis`, `component_trend`, `summarize_components`,
+  `decompose_per_exposure_trend`, `frequency_severity_summary`.
+- Rolling monitors: `rolling_summary`.
+- Banded summaries: `summarize_by_band`.
+
+  To migrate, `pip install experiencestudies` and import these names from
+  `experiencestudies` instead of `actuarialpy`; the signatures are unchanged.
+
+### Changed
+
+- **`banding` split along the primitive/study line.** `assign_band` (pure
+  bucketing) stays in `actuarialpy`; `summarize_by_band` (which needs an
+  experience summary) moved to `experiencestudies`. `assign_band` is unchanged.
+
+### Added
+
+- Surfaced previously-unexported primitives at the top level:
+  - comparison/variance: `absolute_change`, `percent_change`,
+    `basis_point_change`, `variance`, `variance_pct`;
+  - contribution/driver: `share_of_total`, `contribution_to_change`,
+    `top_contributors`, `component_contribution`;
+  - reporting: `to_excel_report`;
+  - date/period helpers: `to_period`, `add_period_column`.
+
 ## 0.41.0
 
 ### Changed
