@@ -48,8 +48,6 @@ pip install actuarialpy
 
 ## Quick start
 
-Pass an aggregate at the grain you are analysing and call the primitive you need:
-
 ```python
 import actuarialpy as ap
 
