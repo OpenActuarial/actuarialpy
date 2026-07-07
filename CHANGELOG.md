@@ -1,5 +1,42 @@
 # Changelog
 
+## 0.44.0
+
+Completes the narrowing of `actuarialpy` to calculation only: the last
+non-calculation module moves to `experiencestudies`. Every remaining module is a
+DataFrame/Series calculation on ``numpy``/``pandas``.
+
+### Removed (moved to experiencestudies)
+
+- `to_excel_report` (the `reporting` module) -- writing a workbook is I/O, not a
+  calculation, so it moves to the applied layer. Import it from
+  `experiencestudies` instead; the signature is unchanged.
+
+### Changed
+
+- Dropped the `excel` optional-dependency extra (and `openpyxl` from `dev`);
+  nothing in `actuarialpy` performs I/O anymore.
+
+## 0.43.0
+
+Continues narrowing `actuarialpy` to calculational primitives and general
+tooling. Presentation/vocabulary config and composed statements move up to
+`experiencestudies`.
+
+### Removed (moved to experiencestudies)
+
+- `UnderwritingSummary` and `underwriting_summary` -- the composed two-tier
+  underwriting income statement is an assembled report, not an atomic
+  calculation, so it now lives in `experiencestudies` (which already held the
+  composed analyses). Import them from `experiencestudies` instead; signatures
+  are unchanged.
+- The `profiles` module (domain naming/labeling, e.g. the `profile="health"`
+  -> `mlr` rename). It was output presentation, not a calculation, and its only
+  consumers are now in `experiencestudies`, so it moved there. It was never part
+  of the public top-level API.
+
+There are no functional changes to the remaining primitives.
+
 ## 0.42.0
 
 This release extracts the experience reporting and analysis layer into a new,

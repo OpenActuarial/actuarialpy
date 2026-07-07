@@ -3,14 +3,9 @@
 Calculation building blocks on tidy tables: ratios and per-exposure metrics,
 chain-ladder development and IBNR, credibility, trend, seasonality, financial
 mathematics (time value of money), exposure and lifecycle bases, size banding,
-pooling, margins, weighted rollups, the underwriting income statement, and
-comparison/contribution/reporting helpers. Every result is a DataFrame or Series
-and the only dependencies are ``numpy`` and ``pandas``.
-
-The experience reporting and analysis layer -- the fluent ``Experience`` object,
-experience summaries, actual-versus-expected, claimant/cohort/component studies,
-decomposition, rolling monitors, and forecasting -- now lives in the separate
-``experiencestudies`` package, which builds on these primitives.
+pooling, margins, weighted rollups, and comparison/contribution helpers. Every
+result is a DataFrame or Series, and the only dependencies are ``numpy`` and
+``pandas``.
 """
 
 from actuarialpy.metrics import (
@@ -101,7 +96,6 @@ from actuarialpy.banding import assign_band
 from actuarialpy.adjustments import adjust
 from actuarialpy.columns import factor_lookup
 from actuarialpy.margins import add_margin, margin, margin_ratio
-from actuarialpy.underwriting import UnderwritingSummary, underwriting_summary
 from actuarialpy.weighted import weighted_mean, weighted_summary
 from actuarialpy.pooling import (
     excess_over_threshold,
@@ -141,7 +135,6 @@ from actuarialpy.contribution import (
     share_of_total,
     top_contributors,
 )
-from actuarialpy.reporting import to_excel_report
 
 __all__ = [
     # ratios and per-exposure metrics
@@ -199,9 +192,6 @@ __all__ = [
     "add_margin",
     "margin",
     "margin_ratio",
-    # underwriting income statement
-    "UnderwritingSummary",
-    "underwriting_summary",
     # explicit-weight aggregation
     "weighted_mean",
     "weighted_summary",
@@ -240,8 +230,6 @@ __all__ = [
     "contribution_to_change",
     "top_contributors",
     "component_contribution",
-    # reporting
-    "to_excel_report",
     # financial mathematics (time value of money)
     "discount_factor",
     "accumulation_factor",

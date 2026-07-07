@@ -5,7 +5,7 @@
 Shared actuarial primitives and general tooling on claims, exposure, and premium data:
 loss ratios and per-exposure rates, development triangles and IBNR, credibility, trend,
 seasonality, financial mathematics, exposure and lifecycle bases, size banding, pooling,
-margins, weighted rollups, and the underwriting income statement. The only dependencies
+margins, and weighted rollups. The only dependencies
 are `numpy` and `pandas`, and every result is a DataFrame or Series.
 
 ## Contents
@@ -22,15 +22,14 @@ are `numpy` and `pandas`, and every result is a DataFrame or Series.
 - [Credibility](#credibility)
 - [Financial mathematics (time value of money)](#financial-mathematics-time-value-of-money)
 - [Lifecycle, pooling, banding, margins](#lifecycle-pooling-banding-margins)
-- [Underwriting summary and weighted rollups](#underwriting-summary-and-weighted-rollups)
-- [Reporting](#reporting)
+- [Weighted rollups](#weighted-rollups)
 
 ## Overview
 
 **`actuarialpy`** is a calculation library of actuarial primitives: loss ratios and
 per-exposure rates, chain-ladder development and IBNR, credibility, trend, seasonal
-factors, financial mathematics, exposure and lifecycle bases, size banding, pooling, and
-the underwriting income statement, applied to claims, exposure, and premium data. It does
+factors, financial mathematics, exposure and lifecycle bases, size banding, pooling,
+margins, and weighted rollups, applied to claims, exposure, and premium data. It does
 not perform data preparation or encode filed methodology: the caller supplies the table
 and selects the method.
 
@@ -47,6 +46,8 @@ pip install actuarialpy
 ```
 
 ## Quick start
+
+Pass an aggregate at the grain you are analysing and call the primitive you need:
 
 ```python
 import actuarialpy as ap
@@ -66,6 +67,23 @@ completed = ap.apply_completion(latest, cf, value_col="claims",
 fit = ap.fit_trend(monthly, date_col="month", value_col="loss_ratio")
 ap.project_forward(fit, periods=12)
 ```
+
+Build the aggregate with pandas at the grain that matches the question. Typically this is a
+single `groupby` that sums claims, counts exposure from a correctly-grained table (e.g. a
+health book's member-months from eligibility, **counted** rather than summed, because the
+count does not repeat across a member's claim rows), and joins premium:
+
+```python
+g = ["group_id", "month"]
+data = (claims.groupby(g)["paid_amount"].sum().rename("claims").to_frame()
+        .join(eligibility.groupby(g).size().rename("member_months"))   # counted, not summed
+        .join(premium.groupby(g)["premium"].sum().rename("premium"))
+        .reset_index())
+```
+
+Choose the grain to match the question: add `"service_type"` for a per-line view, or keep
+`member_id` for member-level analysis. For single calculations, call the free functions
+directly on any aggregate.
 
 ## Ratios and per-exposure metrics
 
@@ -399,38 +417,7 @@ the rate and mirrors input type as shown above.
 - **Contribution** (`contribution`): `share_of_total(...)`, `contribution_to_change(...)`,
   `top_contributors(...)`.
 
-## Underwriting summary and weighted rollups
-
-The two-tier underwriting income statement — **gross margin** (revenue less
-loss expense, operating expense excluded, which is also why operating expense
-never enters a loss ratio) and **gain/(loss)** (gross margin less operating
-expense). Ratio denominators are explicit parameters because real exhibits mix
-them (a loss ratio over net revenue beside an expense ratio over gross
-premium); `reconciliation()` reports the resulting gap in
-`gain% = 1 − combined ratio` so the convention is visible instead of silent.
-Domain naming flows through `profile` / `labels` on the output views (a health
-shop's `mlr`), never the calculation. These are management/pricing metrics;
-regulated ratio calculations (e.g. a statutory rebate loss ratio) are out of
-scope.
-
-```python
-from actuarialpy import UnderwritingSummary, underwriting_summary
-
-uw = UnderwritingSummary.from_per_exposure(
-    revenue_per_exposure={"premium": 400.0, "refund": -1.4},
-    loss_per_exposure={"claims": 340.0, "other_loss": 16.4},
-    expense_per_exposure=37.4,
-    exposure=300_000,
-)
-uw.loss_ratio, uw.expense_ratio, uw.combined_ratio, uw.gain_per_exposure
-uw.to_frame(profile="health")   # loss_ratio -> mlr; math unchanged
-
-# grouped: components summed first, every ratio a ratio of sums
-underwriting_summary(df, groupby="cohort",
-                     revenue_cols=["premium", "refund"], loss_cols=claim_cols,
-                     expense_cols="expense", exposure_col="member_months",
-                     premium_col="premium")
-```
+## Weighted rollups
 
 Quantities that are already rates at the row level (rate actions, persistency)
 cannot be summed; `weighted_mean` / `weighted_summary` average them with a
@@ -441,22 +428,6 @@ from actuarialpy import weighted_summary
 
 weighted_summary(book, value_cols="rate_action", weight_col="premium",
                  groupby="cohort")
-```
-
-## Reporting
-
-Write a set of named analysis views to a multi-sheet Excel workbook (one sheet per key).
-The values are plain DataFrames, so anything you compute — grouped summaries, triangles,
-trend tables — can be a sheet:
-
-```python
-from actuarialpy import to_excel_report
-
-views = {
-    "overall": overall_summary,      # a DataFrame per sheet
-    "by_group": by_group_summary,
-}
-to_excel_report(views, "report.xlsx")   # requires the `excel` extra (openpyxl)
 ```
 
 ## Testing

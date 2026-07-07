@@ -2,7 +2,6 @@ import pandas as pd
 import pytest
 
 from actuarialpy.compare import basis_point_change, variance_pct
-from actuarialpy.reporting import to_excel_report
 from actuarialpy.trend import annualized_trend, midpoint_trend_factor, period_change, project_forward, trend_factor, trend_summary
 
 
@@ -27,12 +26,6 @@ def test_trend_summary_filter_api_still_available():
     df = pd.DataFrame({"product": ["PPO", "PPO"], "year": [2025, 2026], "claims": [100, 121], "mm": [10, 11]})
     out = trend_summary(df, groupby="product", prior_filter=df["year"] == 2025, current_filter=df["year"] == 2026, amount_col="claims", exposure_col="mm")
     assert out.loc[0, "trend"] == pytest.approx((121 / 11) / (100 / 10) - 1)
-
-
-def test_to_excel_report(tmp_path):
-    path = tmp_path / "report.xlsx"
-    result = to_excel_report({"summary": pd.DataFrame({"a": [1]})}, path)
-    assert result.exists()
 
 
 def test_trend_summary_period_does_not_leak_numeric_period_column():
