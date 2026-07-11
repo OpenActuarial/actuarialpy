@@ -9,5 +9,28 @@ permissions:
   id-token: write
 
 jobs:
-  release:
-    uses: OpenActuarial/.github/.github/workflows/reusable-release.yml@main
+  build:
+    uses: OpenActuarial/.github/.github/workflows/reusable-release-build.yml@main
+
+  # PyPI Trusted Publishing requires this job to live in THIS repository:
+  # PyPI matches job_workflow_ref, which for a cross-repo reusable workflow
+  # would point at OpenActuarial/.github and never match this project's
+  # publisher. Keep this job here; keep everything else reusable.
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1
+
+  github-release:
+    needs: publish
+    uses: OpenActuarial/.github/.github/workflows/reusable-github-release.yml@main
+    permissions:
+      contents: write
