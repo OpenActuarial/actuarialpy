@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.44.1
+
+Bump version number to update PyPI with updated README.
+
 ## 0.44.0
 
 Completes the narrowing of `actuarialpy` to calculation only: the last
