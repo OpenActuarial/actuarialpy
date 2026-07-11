@@ -16,8 +16,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-import actuarialpy as ap  # noqa: E402
 from _sample_data import sample_claim_payments  # noqa: E402
+
+import actuarialpy as ap  # noqa: E402
 
 
 def section(title: str) -> None:

@@ -22,8 +22,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-import actuarialpy as ap  # noqa: E402
 from _sample_data import sample_member_months  # noqa: E402
+
+import actuarialpy as ap  # noqa: E402
 
 # A filed full-credibility standard, in member-months (illustrative). Many shops
 # file a volume standard like this rather than deriving one from claim counts.

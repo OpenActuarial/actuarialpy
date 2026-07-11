@@ -14,7 +14,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from actuarialpy.reserving import ChainLadder, chain_ladder_by, make_completion_triangle
+from actuarialpy.reserving import chain_ladder_by, make_completion_triangle
 
 
 def _book(seed=21):
