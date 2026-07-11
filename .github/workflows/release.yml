@@ -1,56 +1,13 @@
-# Tag-driven release via PyPI Trusted Publishing (no tokens, no twine
-# passwords). One-time setup per package:
-#   1. On PyPI: project -> Publishing -> add a Trusted Publisher:
-#      owner OpenActuarial, repository actuarialpy, workflow release.yml,
-#      environment pypi.
-#   2. On GitHub: repo Settings -> Environments -> create "pypi".
-# Then:  git tag v{version} && git push --tags
 name: Release
 
 on:
   push:
     tags: ["v*"]
 
+permissions:
+  contents: write
+  id-token: write
+
 jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - run: |
-          python -m pip install --upgrade pip build twine
-          python -m build
-          twine check dist/*
-      - uses: actions/upload-artifact@v4
-        with:
-          name: dist
-          path: dist/
-
-  publish:
-    needs: build
-    runs-on: ubuntu-latest
-    environment: pypi
-    permissions:
-      id-token: write
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          name: dist
-          path: dist/
-      - uses: pypa/gh-action-pypi-publish@release/v1
-
-  github-release:
-    needs: publish
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v4
-      - name: Extract latest changelog section
-        run: |
-          awk '/^## /{n++} n==1' CHANGELOG.md > release_notes.md
-      - uses: softprops/action-gh-release@v2
-        with:
-          body_path: release_notes.md
+  release:
+    uses: OpenActuarial/.github/.github/workflows/reusable-release.yml@main

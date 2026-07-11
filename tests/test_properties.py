@@ -101,7 +101,7 @@ def test_completion_factors_bounded_monotone_reach_one(increments, ultimates):
     pattern = np.array(increments) / float(sum(increments))
     origins = pd.date_range("2020-01-01", periods=len(ultimates), freq="MS")
     rows = []
-    for ultimate, origin in zip(ultimates, origins):
+    for ultimate, origin in zip(ultimates, origins, strict=True):
         incremental = ultimate * pattern
         for d in range(k):
             rows.append({

@@ -5,7 +5,13 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from actuarialpy import apply_completion, completion_factors, completion_factors_by, develop_ultimate, make_completion_triangle
+from actuarialpy import (
+    apply_completion,
+    completion_factors,
+    completion_factors_by,
+    develop_ultimate,
+    make_completion_triangle,
+)
 
 _PATTERN = np.array([0.34, 0.22, 0.15, 0.10, 0.07, 0.05, 0.03, 0.02, 0.01, 0.005, 0.003, 0.002])
 _PATTERN = _PATTERN / _PATTERN.sum()

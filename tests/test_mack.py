@@ -51,7 +51,7 @@ def test_matches_independent_recursion(taylor_ashe):
     sig2 = cl.mack_sigma_squared(tri)
     s_k = {
         c0: tri[[c0, c1]].dropna()[c0].sum()
-        for c0, c1 in zip(cols[:-1], cols[1:])
+        for c0, c1 in zip(cols[:-1], cols[1:], strict=True)
     }
     # projected paths
     paths, ult = {}, {}
@@ -59,7 +59,7 @@ def test_matches_independent_recursion(taylor_ashe):
         obs = tri.loc[origin].dropna()
         path = dict(obs)
         run, on = float(obs.iloc[-1]), False
-        for c0, c1 in zip(cols[:-1], cols[1:]):
+        for c0, c1 in zip(cols[:-1], cols[1:], strict=True):
             if c0 == obs.index[-1]:
                 on = True
             if on:

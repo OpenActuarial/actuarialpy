@@ -8,34 +8,21 @@ result is a DataFrame or Series, and the only dependencies are ``numpy`` and
 ``pandas``.
 """
 
-from actuarialpy.metrics import (
-    actual_to_expected,
-    combined_ratio,
-    expense_ratio,
-    frequency,
-    indicated_change,
-    loss_ratio,
-    per_exposure,
-    permissible_loss_ratio,
-    pure_premium,
-    ratio,
-    required_revenue,
-    safe_divide,
-    severity,
+from actuarialpy.adjustments import adjust
+from actuarialpy.banding import assign_band
+from actuarialpy.columns import factor_lookup
+from actuarialpy.compare import (
+    absolute_change,
+    basis_point_change,
+    percent_change,
+    variance,
+    variance_pct,
 )
-from actuarialpy.reserving import (
-    ChainLadder,
-    InsufficientDataWarning,
-    apply_completion,
-    chain_ladder_by,
-    completion_factors,
-    completion_factors_by,
-    develop_ultimate,
-    development_months,
-    ibnr,
-    lag_months,
-    make_completion_triangle,
-    validate_completion_factors,
+from actuarialpy.contribution import (
+    component_contribution,
+    contribution_to_change,
+    share_of_total,
+    top_contributors,
 )
 from actuarialpy.credibility import (
     Buhlmann,
@@ -43,6 +30,11 @@ from actuarialpy.credibility import (
     credibility_weighted_estimate,
     full_credibility_claims,
     limited_fluctuation_z,
+)
+from actuarialpy.exposure import (
+    add_exposure_column,
+    age,
+    exposure_years,
 )
 from actuarialpy.financial import (
     accumulated_due,
@@ -77,11 +69,6 @@ from actuarialpy.financial import (
     rate_from_nominal_interest,
     year_fraction,
 )
-from actuarialpy.exposure import (
-    add_exposure_column,
-    age,
-    exposure_years,
-)
 from actuarialpy.lifecycle import (
     STATUS_ACTIVE,
     STATUS_FIRST_YEAR,
@@ -92,16 +79,50 @@ from actuarialpy.lifecycle import (
     earned_exposure,
     is_in_force,
 )
-from actuarialpy.banding import assign_band
-from actuarialpy.adjustments import adjust
-from actuarialpy.columns import factor_lookup
 from actuarialpy.margins import add_margin, margin, margin_ratio
-from actuarialpy.weighted import weighted_mean, weighted_summary
+from actuarialpy.metrics import (
+    actual_to_expected,
+    combined_ratio,
+    expense_ratio,
+    frequency,
+    indicated_change,
+    loss_ratio,
+    per_exposure,
+    permissible_loss_ratio,
+    pure_premium,
+    ratio,
+    required_revenue,
+    safe_divide,
+    severity,
+)
+from actuarialpy.periods import add_period_column, to_period
 from actuarialpy.pooling import (
     excess_over_threshold,
     pool_losses,
     retained_cv,
     retention_for_target_cv,
+)
+from actuarialpy.reserving import (
+    ChainLadder,
+    InsufficientDataWarning,
+    apply_completion,
+    chain_ladder_by,
+    completion_factors,
+    completion_factors_by,
+    develop_ultimate,
+    development_months,
+    ibnr,
+    lag_months,
+    make_completion_triangle,
+    validate_completion_factors,
+)
+from actuarialpy.seasonality import (
+    add_business_days,
+    apply_seasonality,
+    business_days_in_period,
+    deseasonalize,
+    seasonality_factors,
+    seasonality_factors_by,
 )
 from actuarialpy.trend import (
     TrendFit,
@@ -113,28 +134,7 @@ from actuarialpy.trend import (
     trend_factor,
     trend_summary,
 )
-from actuarialpy.seasonality import (
-    add_business_days,
-    apply_seasonality,
-    business_days_in_period,
-    deseasonalize,
-    seasonality_factors,
-    seasonality_factors_by,
-)
-from actuarialpy.periods import add_period_column, to_period
-from actuarialpy.compare import (
-    absolute_change,
-    basis_point_change,
-    percent_change,
-    variance,
-    variance_pct,
-)
-from actuarialpy.contribution import (
-    component_contribution,
-    contribution_to_change,
-    share_of_total,
-    top_contributors,
-)
+from actuarialpy.weighted import weighted_mean, weighted_summary
 
 __all__ = [
     # ratios and per-exposure metrics
@@ -264,7 +264,8 @@ __all__ = [
     "year_fraction",
 ]
 
-from importlib.metadata import PackageNotFoundError as _PackageNotFoundError, version as _version
+from importlib.metadata import PackageNotFoundError as _PackageNotFoundError
+from importlib.metadata import version as _version
 
 try:
     __version__ = _version("actuarialpy")

@@ -4,7 +4,11 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from actuarialpy import credibility_weighted_estimate, full_credibility_claims, limited_fluctuation_z
+from actuarialpy import (
+    credibility_weighted_estimate,
+    full_credibility_claims,
+    limited_fluctuation_z,
+)
 
 
 def test_square_root_rule():

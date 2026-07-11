@@ -11,7 +11,6 @@ import pytest
 
 import actuarialpy as ap
 
-
 # the element-wise functions and a scalar-argument closure for each
 ELEMENTWISE = {
     "discount_factor": lambda r: ap.discount_factor(r, 10),

@@ -1,6 +1,5 @@
 """Tests for the financial mathematics (time value of money) module."""
 import numpy as np
-import pandas as pd
 import pytest
 
 import actuarialpy as ap

@@ -194,7 +194,7 @@ def test_bs_fit_basic_quantities():
     assert model.epv >= 0.0
     assert model.vhm >= 0.0
     premiums = model.premium(weighted_risk_means, risk_weights)
-    for prem, rm in zip(premiums, weighted_risk_means):
+    for prem, rm in zip(premiums, weighted_risk_means, strict=True):
         assert min(rm, overall_mean) <= prem <= max(rm, overall_mean)
 
 

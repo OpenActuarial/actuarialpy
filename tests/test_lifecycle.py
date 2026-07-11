@@ -83,7 +83,7 @@ def test_is_in_force():
         period_start=PERIOD_START,
         period_end=PERIOD_END,
     )
-    flags = dict(zip(lifecycle_df()["group_id"], mask))
+    flags = dict(zip(lifecycle_df()["group_id"], mask, strict=True))
     assert flags["G1"] is True or flags["G1"]
     assert flags["G2"]
     assert not flags["G3"]  # terminated before the period
