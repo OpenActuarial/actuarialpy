@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.46.0
+
+- **Breaking vs 0.45.0**: `Measures` is renamed to `Source`, and the
+  `tables=` argument of both `from_tables` constructors is renamed to
+  `sources=`. One name per concept; the class is one source table and the
+  architecture is sources -> bindings -> consumers.
+- Add `ExperienceSet`: the workbook layer. One construction call
+  (`ExperienceSet.from_tables`) yields the worksheet (`book.tab`) plus one
+  listing member per *named* `Source` spec (`book["claims"]`), each a
+  materialized, grain-honest `Experience`. `cohort(...)` re-derives every
+  member from a filtered grain table (propagation by reconstruction);
+  `reconcile()` ties each listing's measure totals to the tab and surfaces
+  exclusions; `manifest` records sources and shapes. One construction call
+  is universal; one instance never holds two grains.
+- `Source` gains `keys=` to map a source table's join-key column names
+  onto the grain table's names (user-to-user naming varies; renaming a
+  merge key is structural).
+
 ## 0.45.0
 
 The canonical experience container.
@@ -23,7 +41,7 @@ The canonical experience container.
 - Unknown-column errors now suggest the closest match (`'paid_claim' -- did
   you mean 'paid_claims'?`).
 - Add `Experience.from_tables`: build the experience tab from source tables
-  (a grain-defining table plus any number of `Measures` specs declaring role,
+  (a grain-defining table plus any number of `Source` specs declaring role,
   optional `wide_by` pivot, per-table dates floored to `period`, and `rename`).
   Finer tables aggregate up; coarser tables are refused (allocation is
   judgment); unmatched keys warn or raise; empty cells are structural zeros.

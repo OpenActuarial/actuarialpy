@@ -37,7 +37,7 @@ from actuarialpy.seasonality import deseasonalize as _deseasonalize
 
 __all__ = [
     "Experience",
-    "Measures",
+    "Source",
     "Pivot",
     "single_role",
     "single_role_or_none",
@@ -177,7 +177,7 @@ _MAX_WIDE_CATEGORIES = 50
 
 
 @dataclass(frozen=True)
-class Measures:
+class Source:
     """One measure table for :meth:`Experience.from_tables`.
 
     Declares which columns of ``data`` carry which measure role (the same
@@ -196,6 +196,14 @@ class Measures:
     ``agg``
         ``"sum"`` (default) or ``"count"`` (rows per grain cell, e.g. a claim
         count from claim IDs).
+    ``keys``
+        Maps this table's join-key column names onto the grain table's names
+        (``keys={"mbr_id": "member_id"}``), for sources that spell the same
+        key differently.
+    ``name``
+        Names this source as a listing member of an ``ExperienceSet``
+        (``name="claims"`` -> ``book["claims"]``). Ignored by
+        ``Experience.from_tables``.
     """
 
     data: pd.DataFrame
@@ -206,6 +214,8 @@ class Measures:
     date: str | None = None
     agg: str = "sum"
     rename: Mapping[str, str] | None = None
+    keys: Mapping[str, str] | None = None
+    name: str | None = None
 
     def __post_init__(self) -> None:
         for role in _MEASURE_ROLES:
@@ -213,7 +223,7 @@ class Measures:
         named = [(role, col) for role in _MEASURE_ROLES for col in getattr(self, role)]
         if not named:
             raise ValueError(
-                "A Measures spec must name at least one measure column "
+                "A Source spec must name at least one measure column "
                 "(expense=, revenue=, or count=)."
             )
         if self.agg not in ("sum", "count"):
@@ -229,6 +239,8 @@ class Measures:
         if self.date is not None:
             required.append(self.date)
         validate_columns(self.data, required)
+        if self.keys is not None:
+            validate_columns(self.data, list(self.keys))
         if self.rename is not None:
             if self.wide_by is not None:
                 raise ValueError("rename does not apply to wide_by specs; the pivot names its own columns.")
@@ -668,7 +680,7 @@ class Experience:
         if not recorded:
             raise ValueError(
                 "no recorded pivot to melt; this Experience was not built with "
-                "a wide_by= Measures spec."
+                "a wide_by= Source spec."
             )
         if pivot is None:
             if len(recorded) > 1:
@@ -717,7 +729,7 @@ class Experience:
         *,
         grain: str | Iterable[str],
         exposure: str | Iterable[str] | None = None,
-        tables: Iterable[Measures] = (),
+        sources: Iterable[Source] = (),
         date: str | None = None,
         period: str | None = None,
         dimensions: str | Iterable[str] = (),
@@ -731,7 +743,7 @@ class Experience:
         ``data`` is the table that defines the grain -- one row per exposure
         unit (typically membership / eligibility). It is validated unique on
         ``grain``, contributes the ``exposure`` role, and keeps all its other
-        columns (entity attributes ride along). Each :class:`Measures` spec is
+        columns (entity attributes ride along). Each :class:`Source` spec is
         then brought to the grain by one fixed, auditable algorithm:
 
         * tables at a *finer* grain are aggregated up (grouped and summed or
@@ -774,17 +786,21 @@ class Experience:
         pivots: list[Pivot] = []
         joined_cols: set[str] = set(base.columns)
 
-        for index, spec in enumerate(tables):
-            if not isinstance(spec, Measures):
+        for index, spec in enumerate(sources):
+            if not isinstance(spec, Source):
                 raise TypeError(
-                    f"tables[{index}] is {type(spec).__name__}; wrap each measure "
-                    "table in a Measures(...) spec."
+                    f"sources[{index}] is {type(spec).__name__}; wrap each measure "
+                    "table in a Source(...) spec."
                 )
             work = spec.data
+            if spec.keys:
+                # map this table's join-key names onto the grain's names --
+                # renaming a merge key is structural, not judgment
+                work = work.rename(columns=dict(spec.keys))
             if date is not None and date not in work.columns and spec.date is not None:
                 if period is None:
                     raise ValueError(
-                        f"tables[{index}] supplies its own date ({spec.date!r}); pass "
+                        f"sources[{index}] supplies its own date ({spec.date!r}); pass "
                         "period=... (e.g. 'M') so it can be floored to the grain date."
                     )
                 work = work.assign(
@@ -793,7 +809,7 @@ class Experience:
             missing = [c for c in grain_cols if c not in work.columns]
             if missing:
                 raise ValueError(
-                    f"tables[{index}] lacks grain column(s) {missing}; amounts are "
+                    f"sources[{index}] lacks grain column(s) {missing}; amounts are "
                     "never allocated downward -- join it at its own grain or "
                     "allocate explicitly before binding."
                 )
@@ -808,7 +824,7 @@ class Experience:
                     .to_dict("records")
                 )
                 message = (
-                    f"tables[{index}]: {n_orphan} row(s) have grain keys not present "
+                    f"sources[{index}]: {n_orphan} row(s) have grain keys not present "
                     f"in the grain table (e.g. {sample}); they will not join."
                 )
                 if unmatched == "raise":
@@ -820,7 +836,7 @@ class Experience:
                 categories = work[spec.wide_by].nunique(dropna=False)
                 if categories > _MAX_WIDE_CATEGORIES:
                     raise ValueError(
-                        f"tables[{index}]: wide_by={spec.wide_by!r} has {categories} "
+                        f"sources[{index}]: wide_by={spec.wide_by!r} has {categories} "
                         f"categories (limit {_MAX_WIDE_CATEGORIES}) -- that looks like "
                         "an identifier, not a category."
                     )
@@ -836,7 +852,7 @@ class Experience:
                 collision = [c for c in created if c in joined_cols]
                 if collision:
                     raise ValueError(
-                        f"tables[{index}]: pivoted column(s) {collision} collide with "
+                        f"sources[{index}]: pivoted column(s) {collision} collide with "
                         "existing columns; rename the categories or the source columns."
                     )
                 base = base.merge(wide.reset_index(), on=grain_cols, how="left")
@@ -856,7 +872,7 @@ class Experience:
                 collision = [c for c in out if c in joined_cols]
                 if collision:
                     raise ValueError(
-                        f"tables[{index}]: column(s) {collision} collide with existing "
+                        f"sources[{index}]: column(s) {collision} collide with existing "
                         "columns; rename them before binding."
                     )
                 grouped = (

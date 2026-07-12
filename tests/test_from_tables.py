@@ -2,7 +2,7 @@
 import pandas as pd
 import pytest
 
-from actuarialpy import Experience, Measures
+from actuarialpy import Experience, Source
 
 
 def _membership():
@@ -38,12 +38,12 @@ def _build(unmatched="warn"):
         _membership(),
         grain=["member_id", "month"],
         exposure="member_months",
-        tables=[
-            Measures(_claim_lines(), expense="paid_amount",
+        sources=[
+            Source(_claim_lines(), expense="paid_amount",
                      wide_by="claim_type", date="incurred_date"),
-            Measures(_claim_lines(), count="paid_amount", agg="count",
+            Source(_claim_lines(), count="paid_amount", agg="count",
                      rename={"paid_amount": "claim_count"}, date="incurred_date"),
-            Measures(_billing(), revenue="billed_premium"),
+            Source(_billing(), revenue="billed_premium"),
         ],
         date="month", period="M",
         dimensions="group_id", valuation_date="2025-03-31",
@@ -78,7 +78,7 @@ def test_from_tables_refuses_coarser_tables_and_duplicate_grain():
     with pytest.raises(ValueError, match="never allocated downward"):
         Experience.from_tables(_membership(), grain=["member_id", "month"],
                                exposure="member_months",
-                               tables=[Measures(group_month, expense="fee")],
+                               sources=[Source(group_month, expense="fee")],
                                date="month")
     dup = pd.concat([_membership(), _membership().head(1)])
     with pytest.raises(ValueError, match="repeat an exposure unit"):
@@ -95,7 +95,7 @@ def test_from_tables_raise_mode_and_cardinality_guard():
     with pytest.raises(ValueError, match="looks like an identifier"):
         Experience.from_tables(_membership(), grain=["member_id", "month"],
                                exposure="member_months", date="month", period="M",
-                               tables=[Measures(big, expense="paid_amount",
+                               sources=[Source(big, expense="paid_amount",
                                                 wide_by="claim_type", date="incurred_date")])
 
 
@@ -126,3 +126,16 @@ def test_melt_inverts_the_recorded_pivot():
     plain = Experience(exp.data, expense="inpatient", date="month")
     with pytest.raises(ValueError, match="no recorded pivot"):
         plain.melt()
+
+
+def test_measures_keys_maps_differently_named_join_columns():
+    lines = _claim_lines().rename(columns={"member_id": "mbr_id"})
+    with pytest.warns(UserWarning, match="not present in the grain table"):
+        exp = Experience.from_tables(
+            _membership(), grain=["member_id", "month"], exposure="member_months",
+            sources=[Source(lines, expense="paid_amount", wide_by="claim_type",
+                             date="incurred_date", keys={"mbr_id": "member_id"})],
+            date="month", period="M")
+    assert float(exp.data["inpatient"].sum()) == 1_300.0
+    with pytest.raises(ValueError, match="Missing required columns"):
+        Source(lines, expense="paid_amount", keys={"member_id": "member_id"})

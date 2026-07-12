@@ -72,8 +72,8 @@ from actuarialpy.financial import (
 from actuarialpy.frame import (
     ULTIMATE,
     Experience,
-    Measures,
     Pivot,
+    Source,
     resolve_amount,
     resolve_date,
     single_role,
@@ -145,11 +145,13 @@ from actuarialpy.trend import (
     trend_summary,
 )
 from actuarialpy.weighted import weighted_mean, weighted_summary
+from actuarialpy.workbook import ExperienceSet
 
 __all__ = [
     # the canonical experience container and its role helpers
     "Experience",
-    "Measures",
+    "ExperienceSet",
+    "Source",
     "Pivot",
     "ULTIMATE",
     "resolve_amount",
