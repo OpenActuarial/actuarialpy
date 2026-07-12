@@ -35,7 +35,15 @@ def validate_columns(df: pd.DataFrame, cols: str | Iterable[str]) -> None:
     required = as_list(cols)
     missing = [col for col in required if col not in df.columns]
     if missing:
-        raise ValueError(f"Missing required columns: {missing}")
+        import difflib
+
+        hints = []
+        for col in missing:
+            close = difflib.get_close_matches(str(col), [str(c) for c in df.columns], n=1)
+            if close:
+                hints.append(f"{col!r} -- did you mean {close[0]!r}?")
+        hint = (" " + " ".join(hints)) if hints else ""
+        raise ValueError(f"Missing required columns: {missing}.{hint}")
 
 
 def ensure_unique_keys(df: pd.DataFrame, keys: str | Iterable[str], *, name: str = "data") -> None:

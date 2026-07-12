@@ -1,6 +1,11 @@
 # actuarialpy
 
-Purpose-neutral actuarial calculation primitives — the foundation of the OpenActuarial ecosystem.
+Purpose-neutral actuarial calculation primitives, plus the shared actuarial data contract — the foundation of the OpenActuarial ecosystem.
+
+> `actuarialpy.Experience` is the ecosystem's canonical semantic wrapper for
+> historical actuarial data: it binds column roles, grain metadata, and
+> snapshot context. Its domain operations are immutable transformations;
+> calculations and workflow outputs belong to consuming packages.
 
 [![CI](https://github.com/OpenActuarial/actuarialpy/actions/workflows/ci.yml/badge.svg)](https://github.com/OpenActuarial/actuarialpy/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/actuarialpy)](https://pypi.org/project/actuarialpy/)

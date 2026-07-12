@@ -1,5 +1,39 @@
 # Changelog
 
+## 0.45.0
+
+The canonical experience container.
+
+- Add `Experience`: the ecosystem's shared semantic wrapper for historical
+  actuarial data. Binds measure roles (`expense`, `revenue`, `exposure`,
+  `count`; at least one required, none mandatory), the `date` role, and
+  segmentation `dimensions`; carries grain metadata (`exposure_keys`, with a
+  construction-time uniqueness guard against overcounted exposure) and
+  snapshot context (`valuation_date`, per-column `basis`).
+- Transformations (`filter`, `with_roles`, `with_status`, `complete`,
+  `adjust`, `deseasonalize`) take assumptions as arguments and return a new
+  `Experience`; a test enforces that no public method returns anything else.
+- `complete()` defaults its valuation date from the object, marks completed
+  columns `"ultimate"` in `basis`, and refuses to complete a column already
+  on an ultimate basis — double development is now an error.
+- `fit_trend` and `trend_summary` accept an `Experience` natively, resolving
+  value, date, and exposure columns from the bound roles.
+- Export role-resolution helpers: `single_role`, `single_role_or_none`,
+  `resolve_date`, `resolve_amount`, and the `ULTIMATE` basis constant.
+- Unknown-column errors now suggest the closest match (`'paid_claim' -- did
+  you mean 'paid_claims'?`).
+- Add `Experience.from_tables`: build the experience tab from source tables
+  (a grain-defining table plus any number of `Measures` specs declaring role,
+  optional `wide_by` pivot, per-table dates floored to `period`, and `rename`).
+  Finer tables aggregate up; coarser tables are refused (allocation is
+  judgment); unmatched keys warn or raise; empty cells are structural zeros.
+- Record `wide_by` pivots as `Pivot` provenance and add `Experience.melt` to
+  undo them structurally (clearing `exposure_keys`, since the long frame
+  repeats exposure per category).
+- Add `Experience.aggregate(by=..., freq=...)`: sum the measure roles to a
+  coarser grain. Requires `exposure_keys` when an exposure role is bound --
+  summing exposure is only provably safe on a validated grain.
+
 ## 0.44.1
 
 Bump version number to update PyPI with updated README.

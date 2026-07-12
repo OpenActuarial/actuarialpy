@@ -69,6 +69,16 @@ from actuarialpy.financial import (
     rate_from_nominal_interest,
     year_fraction,
 )
+from actuarialpy.frame import (
+    ULTIMATE,
+    Experience,
+    Measures,
+    Pivot,
+    resolve_amount,
+    resolve_date,
+    single_role,
+    single_role_or_none,
+)
 from actuarialpy.lifecycle import (
     STATUS_ACTIVE,
     STATUS_FIRST_YEAR,
@@ -137,6 +147,15 @@ from actuarialpy.trend import (
 from actuarialpy.weighted import weighted_mean, weighted_summary
 
 __all__ = [
+    # the canonical experience container and its role helpers
+    "Experience",
+    "Measures",
+    "Pivot",
+    "ULTIMATE",
+    "resolve_amount",
+    "resolve_date",
+    "single_role",
+    "single_role_or_none",
     # ratios and per-exposure metrics
     "actual_to_expected",
     "combined_ratio",

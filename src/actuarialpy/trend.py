@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 
 from actuarialpy.columns import as_list, validate_columns
+from actuarialpy.frame import Experience, resolve_amount, resolve_date, single_role_or_none
 from actuarialpy.metrics import safe_divide
 
 
@@ -104,7 +105,7 @@ def _comparison_masks(
     return prior_filter, current_filter, "filter"
 
 def trend_summary(
-    df: pd.DataFrame,
+    df: pd.DataFrame | Experience,
     *,
     period_col: str | None = None,
     prior_period=None,
@@ -115,7 +116,7 @@ def trend_summary(
     current_start=None,
     current_end=None,
     groupby=None,
-    amount_col: str,
+    amount_col: str | None = None,
     exposure_col: str | None = None,
     prior_filter=None,
     current_filter=None,
@@ -124,11 +125,29 @@ def trend_summary(
 ) -> pd.DataFrame:
     """Summarize current vs prior trend by optional grouping.
 
+    Accepts an :class:`Experience` (bound expense / exposure / date roles fill
+    ``amount_col``, ``exposure_col``, and -- for date-range comparisons --
+    ``date_col``) or a plain DataFrame with ``amount_col`` named explicitly.
+
     Supported comparison modes:
     - ``period_col='year', prior_period=2025, current_period=2026``
     - ``date_col='incurred_date'`` with prior/current start and end dates
     - explicit boolean ``prior_filter`` and ``current_filter`` masks
     """
+    if isinstance(df, Experience):
+        exp = df
+        df, amount_col = resolve_amount(exp, amount_col)
+        if exposure_col is None:
+            exposure_col = single_role_or_none(exp.exposure)
+        # Bound date only fills the date-range mode; injecting it alongside
+        # period_col would create two comparison modes and raise.
+        if date_col is None and period_col is None:
+            date_col = exp.date
+    elif amount_col is None:
+        raise TypeError(
+            "amount_col is required when passing a DataFrame; "
+            "pass an Experience to use its bound roles."
+        )
     groups = as_list(groupby)
     required = groups + [amount_col] + ([exposure_col] if exposure_col else [])
     if period_col is not None:
@@ -266,16 +285,20 @@ class TrendFit:
 
 
 def fit_trend(
-    df: pd.DataFrame,
+    df: pd.DataFrame | Experience,
     *,
-    value_col: str,
-    date_col: str,
+    value_col: str | None = None,
+    date_col: str | None = None,
     exposure_col: str | None = None,
     freq: str = "M",
     min_periods: int = 3,
     confidence: float = 0.95,
 ) -> TrendFit:
     """Fit an exponential trend to a rate series by log-linear regression.
+
+    Accepts an :class:`Experience` -- the bound expense, date, and exposure
+    roles fill ``value_col``, ``date_col``, and ``exposure_col`` -- or a plain
+    DataFrame with those columns named explicitly.
 
     Aggregates ``df`` to the ``freq`` grain (summing ``value_col`` and, if given,
     ``exposure_col``), forms the rate -- ``value / exposure`` (the per-exposure rate) when
@@ -296,6 +319,17 @@ def fit_trend(
     correctly. Requires at least ``min_periods`` distinct periods with strictly positive
     rates (non-positive values, which cannot be logged, raise). Returns a :class:`TrendFit`.
     """
+    if isinstance(df, Experience):
+        exp = df
+        df, value_col = resolve_amount(exp, value_col)
+        date_col = resolve_date(exp, date_col)
+        if exposure_col is None:
+            exposure_col = single_role_or_none(exp.exposure)
+    elif value_col is None or date_col is None:
+        raise TypeError(
+            "value_col and date_col are required when passing a DataFrame; "
+            "pass an Experience to use its bound roles."
+        )
     if not 0.0 < confidence < 1.0:
         raise ValueError("confidence must be between 0 and 1.")
     cols = [value_col, date_col] + ([exposure_col] if exposure_col else [])
