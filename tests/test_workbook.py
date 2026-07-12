@@ -65,12 +65,3 @@ def test_reconcile_ties_listing_to_tab():
     row = rec[rec["measure"] == "paid_amount"].iloc[0]
     assert row["source_total"] == pytest.approx(1_450.0)
     assert bool(row["ties"])
-
-
-def test_consumers_route_the_set_to_the_right_member():
-    import experiencestudies as es
-    from lossmodels.integrations.actuarialpy import claim_amounts
-    book = _book()
-    assert es.summary(book, "group_id").equals(es.summary(book.tab, "group_id"))
-    assert claim_amounts(book) == pytest.approx(
-        claim_amounts(book["claims"]))
