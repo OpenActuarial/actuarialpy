@@ -10,7 +10,8 @@ permissions:
 
 jobs:
   ci:
-    uses: OpenActuarial/.github/.github/workflows/reusable-ci.yml@main
+    uses: OpenActuarial/.github/.github/workflows/reusable-ci.yml@v1
     with:
       package: actuarialpy
+      coverage-min: 86
       extra-pip: "chainladder"

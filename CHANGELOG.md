@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.46.1
+
+Compatibility patch; no library-code changes.
+
+- Declare Python 3.14 support in the package classifiers (the CI matrix has
+  tested 3.14 since it entered the matrix; the classifiers had not caught up).
+- Fix `examples/reserving_ibnr.py` to run at the declared pandas floor:
+  `DataFrame.map` needs pandas>=2.1, so the example now maps per column with
+  `Series.map`, which works on every supported pandas. Found by the new
+  minimum-dependency CI job (see the org reusable workflow).
+
 ## 0.46.0
 
 - **Breaking vs 0.45.0**: `Measures` is renamed to `Source`, and the
