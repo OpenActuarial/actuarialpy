@@ -17,6 +17,8 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from actuarialpy.validation import validate_positive
+
 _SCALAR_TYPES = (int, float, np.number)
 
 
@@ -177,8 +179,7 @@ class BuhlmannStraub:
             raise ValueError("weights must be a 1D array.")
         if weights.size == 0:
             raise ValueError("weights must not be empty.")
-        if np.any(weights <= 0):
-            raise ValueError("weights must be positive.")
+        validate_positive(weights, "weights")
         if epv < 0:
             raise ValueError("epv must be nonnegative.")
         if vhm < 0:
@@ -211,8 +212,7 @@ class BuhlmannStraub:
         """
         weight = np.asarray(weight, dtype=float)
 
-        if np.any(weight <= 0):
-            raise ValueError("weight must be positive.")
+        validate_positive(weight, "weight")
 
         k = self.k
         if not np.isfinite(k):
@@ -281,8 +281,7 @@ class BuhlmannStraub:
                 if x.size < 2:
                     raise ValueError("each risk must have at least two periods.")
         allw = np.concatenate([np.ravel(w) for w in wts])
-        if np.any(allw <= 0):
-            raise ValueError("weights must be positive.")
+        validate_positive(allw, "weights")
         return obs, wts
 
     @staticmethod
@@ -396,8 +395,7 @@ class BuhlmannStraub:
         work = df[required].copy()
         work[value] = work[value].astype(float)
         work[weight] = work[weight].astype(float)
-        if np.any(work[weight].to_numpy() <= 0):
-            raise ValueError("weights must be positive.")
+        validate_positive(work[weight].to_numpy(), "weights")
 
         risk_obs, risk_wts, labels = [], [], []
         for label, g in work.groupby(group, sort=True):

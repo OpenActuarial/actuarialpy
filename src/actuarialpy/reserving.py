@@ -179,11 +179,31 @@ class ChainLadder:
                 raise ValueError(f"no overlapping origins to estimate the {start}->{end} development factor")
             if method == "volume":
                 start_sum = float(pair[start].sum())
-                if start_sum == 0:
-                    raise ValueError(f"zero cumulative at development period {start}; cannot estimate {start}->{end} factor")
+                # exact ``== 0`` alone would miss a negative sum (possible with heavy
+                # salvage/subrogation) or a non-finite one, both of which corrupt the factor.
+                if not np.isfinite(start_sum) or start_sum <= 0:
+                    raise ValueError(
+                        f"non-positive or non-finite cumulative at development period {start} "
+                        f"({start_sum}); cannot estimate the {start}->{end} factor"
+                    )
                 ratios[start] = float(pair[end].sum()) / start_sum
             else:
+                # the simple average of per-origin link ratios is undefined when any
+                # individual prior cumulative is <= 0 or non-finite (it would divide by it).
+                start_cells = pair[start].to_numpy(dtype="float64")
+                if not np.all(np.isfinite(start_cells)) or np.any(start_cells <= 0):
+                    raise ValueError(
+                        f"method='simple' needs strictly positive prior cumulatives at "
+                        f"development period {start}; use method='volume' or clean the triangle"
+                    )
                 ratios[start] = float((pair[end] / pair[start]).mean())
+            # a non-positive or non-finite link factor (e.g. an all-zero next column)
+            # would drive the cdf to zero and its reciprocal completion factor to inf.
+            if not np.isfinite(ratios[start]) or ratios[start] <= 0:
+                raise ValueError(
+                    f"development factor {start}->{end} is non-positive or non-finite "
+                    f"({ratios[start]}); the triangle cannot be developed"
+                )
         age_to_age = pd.Series(ratios, name="age_to_age")
 
         # cumulative development factors to ultimate (with tail), accumulating back

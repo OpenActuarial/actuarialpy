@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from typing import Any
 
@@ -11,6 +12,7 @@ import pandas as pd
 from actuarialpy.columns import as_list, validate_columns
 from actuarialpy.frame import Experience, resolve_amount, resolve_date, single_role_or_none
 from actuarialpy.metrics import safe_divide
+from actuarialpy.validation import validate_positive
 
 
 def period_change(current: Any, prior: Any) -> Any:
@@ -232,18 +234,117 @@ def _inverse_normal_cdf(p: float) -> float:
            (((((b[0] * r + b[1]) * r + b[2]) * r + b[3]) * r + b[4]) * r + 1)
 
 
-def _student_t_ppf(p: float, df: float) -> float:
-    """Student-t quantile via the Cornish-Fisher / A&S 26.7.5 expansion (no SciPy).
+def _reg_incomplete_beta(x: float, a: float, b: float) -> float:
+    r"""Regularized incomplete beta :math:`I_x(a, b)` via a Lentz continued fraction.
 
-    Accurate to within ~0.001 of tabulated values for df >= 5; widens (conservatively)
-    for very small df. Adequate for trend confidence intervals.
+    The Numerical-Recipes ``betai``: exact (to machine tolerance) with no SciPy,
+    used to evaluate the Student-t CDF for the quantile inversion below.
     """
-    x = _inverse_normal_cdf(p)
-    g1 = (x**3 + x) / 4
-    g2 = (5 * x**5 + 16 * x**3 + 3 * x) / 96
-    g3 = (3 * x**7 + 19 * x**5 + 17 * x**3 - 15 * x) / 384
-    g4 = (79 * x**9 + 776 * x**7 + 1482 * x**5 - 1920 * x**3 - 945 * x) / 92160
-    return x + g1 / df + g2 / df**2 + g3 / df**3 + g4 / df**4
+    if x <= 0.0:
+        return 0.0
+    if x >= 1.0:
+        return 1.0
+    ln_beta = math.lgamma(a + b) - math.lgamma(a) - math.lgamma(b)
+    front = math.exp(ln_beta + a * math.log(x) + b * math.log(1.0 - x))
+    # Continued fraction converges fast for x < (a+1)/(a+b+2); else use the symmetry.
+    if x < (a + 1.0) / (a + b + 2.0):
+        return front * _beta_cf(x, a, b) / a
+    return 1.0 - front * _beta_cf(1.0 - x, b, a) / b
+
+
+def _beta_cf(x: float, a: float, b: float) -> float:
+    """Lentz evaluation of the beta continued fraction (helper for ``_reg_incomplete_beta``)."""
+    tiny = 1e-30
+    qab, qap, qam = a + b, a + 1.0, a - 1.0
+    c = 1.0
+    d = 1.0 - qab * x / qap
+    if abs(d) < tiny:
+        d = tiny
+    d = 1.0 / d
+    h = d
+    for m in range(1, 300):
+        m2 = 2 * m
+        aa = m * (b - m) * x / ((qam + m2) * (a + m2))
+        d = 1.0 + aa * d
+        if abs(d) < tiny:
+            d = tiny
+        c = 1.0 + aa / c
+        if abs(c) < tiny:
+            c = tiny
+        d = 1.0 / d
+        h *= d * c
+        aa = -(a + m) * (qab + m) * x / ((a + m2) * (qap + m2))
+        d = 1.0 + aa * d
+        if abs(d) < tiny:
+            d = tiny
+        c = 1.0 + aa / c
+        if abs(c) < tiny:
+            c = tiny
+        d = 1.0 / d
+        delta = d * c
+        h *= delta
+        if abs(delta - 1.0) < 1e-14:
+            break
+    return h
+
+
+def _student_t_cdf(t: float, df: float) -> float:
+    """Student-t CDF via the regularized incomplete beta (exact, no SciPy)."""
+    x = df / (df + t * t)
+    ib = _reg_incomplete_beta(x, df / 2.0, 0.5)
+    return 1.0 - 0.5 * ib if t > 0 else 0.5 * ib
+
+
+def _student_t_ppf(p: float, df: float) -> float:
+    """Exact Student-t quantile (percent-point function).
+
+    Uses SciPy's ``scipy.stats.t.ppf`` when SciPy is importable; otherwise falls
+    back to an exact, dependency-free evaluation -- closed forms at ``df == 1``
+    (Cauchy) and ``df == 2``, and bisection on the incomplete-beta CDF for
+    larger ``df``. Correct to ~1e-10 across all degrees of freedom.
+
+    Replaces an earlier Cornish-Fisher approximation that was ~11% too narrow at
+    ``df == 1`` (it returned 11.30 versus the exact 12.71 at the 97.5th
+    percentile) despite claiming to be conservative for small ``df`` -- which
+    understated confidence intervals on the smallest trend fits (``n == 3`` gives
+    ``df == 1``).
+    """
+    if not 0.0 < p < 1.0:
+        raise ValueError("p must lie in (0, 1)")
+    if df <= 0:
+        raise ValueError("df must be positive")
+
+    try:  # opportunistic: SciPy is not a dependency of actuarialpy
+        from scipy.stats import t as _scipy_t
+
+        return float(_scipy_t.ppf(p, df))
+    except ImportError:
+        pass
+
+    if p == 0.5:
+        return 0.0
+    if p < 0.5:  # symmetry
+        return -_student_t_ppf(1.0 - p, df)
+
+    q = p - 0.5
+    if df == 1.0:  # Cauchy
+        return float(math.tan(math.pi * q))
+    if df == 2.0:  # exact closed form
+        return float(2.0 * q * math.sqrt(2.0 / (1.0 - 4.0 * q * q)))
+
+    # General df: bisection on the exact CDF. The normal quantile is a lower
+    # bound and the (heavier-tailed) Cauchy quantile an upper bound for p > 0.5.
+    lo = _inverse_normal_cdf(p)
+    hi = math.tan(math.pi * q)
+    for _ in range(200):
+        mid = 0.5 * (lo + hi)
+        if _student_t_cdf(mid, df) < p:
+            lo = mid
+        else:
+            hi = mid
+        if hi - lo < 1e-12 * max(1.0, abs(hi)):
+            break
+    return 0.5 * (lo + hi)
 
 
 @dataclass(frozen=True)
@@ -345,8 +446,9 @@ def fit_trend(
     rate = rate.to_numpy(dtype="float64")
     if len(rate) < max(min_periods, 3):
         raise ValueError(f"fit_trend needs at least {max(min_periods, 3)} periods; got {len(rate)}.")
-    if np.any(rate <= 0):
-        raise ValueError("fit_trend requires strictly positive rates (cannot take the log of <= 0).")
+    # A bare ``rate <= 0`` test would let NaN through (NaN <= 0 is False) and it would
+    # then propagate silently through log(); validate_positive rejects non-finite too.
+    validate_positive(rate, "fit_trend rate")
 
     timestamps = grouped.index.to_timestamp()
     t = (timestamps - timestamps[0]).days.to_numpy(dtype="float64") / 365.25
