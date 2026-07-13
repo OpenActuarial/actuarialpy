@@ -37,9 +37,7 @@ def main() -> None:
         amount_col="paid",
         cumulative=True,
     )
-    with_commas = triangle.apply(  # NaN -> blank; Series.map works on pandas 1.5+
-        lambda col: col.map(lambda v: f"{v:,.0f}" if v == v else "")
-    )
+    with_commas = triangle.map(lambda v: f"{v:,.0f}" if v == v else "")  # NaN -> blank
     print(with_commas.to_string())
 
     section("2. completion_factors: proportion of ultimate emerged by each development period")

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "actuarialpy"
-version = "0.46.1"
+version = "0.46.0"
 description = "Shared actuarial primitives and general tooling: ratios, credibility, trend, completion, seasonality, financial mathematics, exposure, banding, pooling, and margins on tidy tables."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -23,7 +23,6 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
-    "Programming Language :: Python :: 3.14",
     "Topic :: Office/Business :: Financial",
     "Topic :: Scientific/Engineering :: Mathematics",
 ]
