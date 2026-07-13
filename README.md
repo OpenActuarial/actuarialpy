@@ -43,15 +43,18 @@ import actuarialpy as ap
 print(ap.loss_ratio(1_240_000, 1_500_000))       # 0.8267
 print(ap.per_exposure(1_240_000, 12_000))        # 103.33 per exposure unit
 
-# fit a trend to a monthly series and project it forward
+# trend claim severity to project future loss costs
 monthly = pd.DataFrame({
     "month": pd.date_range("2024-01-01", periods=24, freq="MS"),
-    "loss_ratio": [0.80 * 1.004 ** i for i in range(24)],
+    "avg_severity": [5_000 * 1.004 ** i for i in range(24)],
+    "claim_count": [20] * 24,
 })
-fit = ap.fit_trend(monthly, date_col="month", value_col="loss_ratio")
-print(f"annual trend: {fit.annual_trend:+.2%}")
-print(round(ap.project_forward(monthly["loss_ratio"].iloc[-1],
-                               fit.annual_trend, months=6), 4))
+severity_trend = ap.fit_trend(monthly, date_col="month", value_col="avg_severity")
+# if severity trends at +0.4%/month and claim count stays flat,
+# projected losses next quarter will be:
+projected_severity = ap.project_forward(monthly["avg_severity"].iloc[-1], 
+                                        severity_trend.annual_trend, months=3)
+projected_losses = projected_severity * monthly["claim_count"].iloc[-1]
 
 # cap large claims at a pooling point; the excess moves to its own column
 claims = pd.DataFrame({"member": ["a", "b", "c"],
