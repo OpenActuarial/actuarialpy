@@ -84,7 +84,7 @@ The full API reference and end-to-end worked examples live at
 
 ## The OpenActuarial ecosystem
 
-`actuarialpy` is one of seven packages that share conventions — tidy tables,
+`actuarialpy` is one of eight packages that share conventions — tidy tables,
 explicit distribution parameterizations, reproducible random-number handling —
 and compose across package seams:
 
@@ -94,6 +94,7 @@ and compose across package seams:
 | [experiencestudies](https://github.com/OpenActuarial/experiencestudies) | Experience reporting, actual-vs-expected, claimant and concentration analysis |
 | [projectionmodels](https://github.com/OpenActuarial/projectionmodels) | Claim, premium, and expense projection over a renewal horizon |
 | [ratingmodels](https://github.com/OpenActuarial/ratingmodels) | Manual and experience rating, credibility, indication, GLM relativities |
+| [reservingmodels](https://github.com/OpenActuarial/reservingmodels) | Claims development and stochastic reserving: chain ladder, BF, Mack, ODP bootstrap |
 | [lossmodels](https://github.com/OpenActuarial/lossmodels) | Severity and frequency fitting, aggregate loss distributions |
 | [extremeloss](https://github.com/OpenActuarial/extremeloss) | Extreme-value tails: POT/GPD, GEV, return levels, splicing |
 | [risksim](https://github.com/OpenActuarial/risksim) | Portfolio Monte Carlo, dependence, reinsurance contracts, risk measures |
